@@ -1,0 +1,152 @@
+mod commands;
+mod core;
+mod discovery;
+pub mod error;
+mod platform;
+mod relay;
+mod storage;
+mod transfer;
+
+pub use error::AppError;
+
+use core::file::ProgressEvent;
+use relay::client::RelayClient;
+use storage::{config::Config, history::TransferHistory};
+use std::sync::Arc;
+use tauri::{Emitter, Manager};
+use transfer::engine::{TransferConfig, TransferEngine};
+
+use bytes::Bytes;
+use tokio::sync::mpsc;
+
+pub struct AppState {
+    pub config: std::sync::Mutex<Config>,
+    pub history: std::sync::Mutex<TransferHistory>,
+    pub engine: Arc<tokio::sync::Mutex<TransferEngine>>,
+    pub relay_client: Arc<tokio::sync::Mutex<Option<Arc<RelayClient>>>>,
+    /// file_id → data sender channel for routing incoming relay data to receivers
+    pub receiver_data_channels: Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>>,
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let config = Config::load().unwrap_or_default();
+    let history = TransferHistory::load().unwrap_or_default();
+    let engine_config = TransferConfig {
+        chunk_size: config.chunk_size,
+        max_concurrent: 3,
+        ..Default::default()
+    };
+    let data_channels: Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>> =
+        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+    let (mut engine, progress_rx) = TransferEngine::new(engine_config);
+    engine.set_data_channels(data_channels.clone());
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState {
+            receiver_data_channels: data_channels.clone(),
+            config: std::sync::Mutex::new(config),
+            history: std::sync::Mutex::new(history),
+            engine: Arc::new(tokio::sync::Mutex::new(engine)),
+            relay_client: Arc::new(tokio::sync::Mutex::new(None)),
+        })
+        .setup(|app| {
+            let handle = app.handle().clone();
+
+            // mDNS 局域网发现（Tauri 桌面端）
+            let app_state = app.state::<AppState>().inner();
+            let device_id = app_state.config.lock().ok().map(|c| c.device_id).unwrap_or_else(uuid::Uuid::new_v4);
+            let device_name = app_state.config.lock().ok().map(|c| c.device_name.clone()).unwrap_or_else(whoami::hostname);
+            match crate::discovery::mdns::MdnsDiscovery::start(device_id, &device_name) {
+                Ok((_discovery, mdns_rx)) => {
+                    let mdns_handle = handle.clone();
+                    std::thread::spawn(move || {
+                        while let Ok(event) = mdns_rx.recv() {
+                            match event {
+                                crate::discovery::mdns::DiscoveredEvent::Found(device) => {
+                                    use tauri::Emitter;
+                                    let _ = mdns_handle.emit("device:discovered", &device);
+                                }
+                                crate::discovery::mdns::DiscoveredEvent::Lost(device_id) => {
+                                    use tauri::Emitter;
+                                    let _ = mdns_handle.emit("device:lost", serde_json::json!({"device_id": device_id}));
+                                }
+                            }
+                        }
+                    });
+                    tracing::info!("mDNS discovery started");
+                }
+                Err(e) => {
+                    tracing::warn!("mDNS discovery failed: {}", e);
+                }
+            }
+
+            // 进度事件循环
+            tauri::async_runtime::spawn(async move {
+                let mut rx = progress_rx;
+                while let Some(event) = rx.recv().await {
+                    use serde_json::json;
+                    match event {
+                        ProgressEvent::Progress { transfer_id, file_id, file_name, bytes_sent, bytes_total, speed } => {
+                            handle.emit("transfer:progress", json!({
+                                "transfer_id": transfer_id, "file_id": file_id,
+                                "file_name": file_name, "bytes_sent": bytes_sent,
+                                "bytes_total": bytes_total, "speed": speed,
+                            })).ok();
+                        }
+                        ProgressEvent::Complete { transfer_id, file_id, file_name } => {
+                            handle.emit("transfer:complete", json!({
+                                "transfer_id": transfer_id, "file_id": file_id, "file_name": file_name,
+                            })).ok();
+                        }
+                        ProgressEvent::BatchComplete { transfer_id } => {
+                            handle.emit("transfer:batch_complete", json!({"transfer_id": transfer_id})).ok();
+                        }
+                        ProgressEvent::Failed { transfer_id, file_id, error } => {
+                            handle.emit("transfer:failed", json!({
+                                "transfer_id": transfer_id, "file_id": file_id, "error": error,
+                            })).ok();
+                        }
+                        ProgressEvent::Paused { reason } => {
+                            handle.emit("transfer:paused", json!({"reason": reason})).ok();
+                        }
+                        ProgressEvent::Resumed { file_id } => {
+                            handle.emit("transfer:resumed", json!({"file_id": file_id})).ok();
+                        }
+                        ProgressEvent::Cancelled { transfer_id, reason } => {
+                            handle.emit("transfer:cancelled", json!({"transfer_id": transfer_id, "reason": reason})).ok();
+                        }
+                        ProgressEvent::Queued { transfer_id, position } => {
+                            handle.emit("transfer:queued", json!({"transfer_id": transfer_id, "position": position})).ok();
+                        }
+                    }
+                }
+            });
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::device::get_device_id,
+            commands::device::get_device_name,
+            commands::device::set_device_name,
+            commands::device::get_device_info,
+            commands::file::pick_files,
+            commands::file::pick_directory,
+            commands::file::get_file_meta,
+            commands::file::get_downloads_dir,
+            commands::network::connect_relay,
+            commands::network::disconnect_relay,
+            commands::transfer::send_files,
+            commands::transfer::accept_transfer,
+            commands::transfer::reject_transfer,
+            commands::transfer::cancel_transfer,
+            commands::transfer::pause_transfer,
+            commands::transfer::resume_transfer,
+            commands::transfer::get_active_transfers,
+            commands::transfer::get_history,
+            commands::transfer::clear_history,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
