@@ -2,15 +2,18 @@ use crate::AppError;
 use crate::core::file::FileMeta;
 
 #[tauri::command]
-pub fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+pub async fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let files = app
-        .dialog()
-        .file()
-        .add_filter("All", &["*"])
-        .blocking_pick_files();
+    let files = tokio::task::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter("All", &["*"])
+            .blocking_pick_files()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .unwrap_or_default();
     Ok(files
-        .unwrap_or_default()
         .into_iter()
         .filter_map(|f| f.into_path().ok())
         .map(|p| p.to_string_lossy().to_string())
@@ -18,9 +21,13 @@ pub fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub fn pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let dir = app.dialog().file().blocking_pick_folder();
+    let dir = tokio::task::spawn_blocking(move || {
+        app.dialog().file().blocking_pick_folder()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     Ok(dir.and_then(|d| d.into_path().ok().map(|p| p.to_string_lossy().to_string())))
 }
 
