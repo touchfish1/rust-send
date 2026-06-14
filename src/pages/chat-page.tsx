@@ -14,6 +14,7 @@ export function ChatPage() {
   const device = deviceId ? devices.get(deviceId) : undefined
   const active = useTransferStore((s) => s.active)
   const history = useTransferStore((s) => s.history)
+  const isTauri = typeof window !== "undefined" && !!(window as any).__TAURI_INTERNALS__
 
   const [pendingFiles, setPendingFiles] = useState<{ path: string; name: string; size: number }[]>([])
 
@@ -29,20 +30,24 @@ export function ChatPage() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, noClick: true })
 
   const handlePickFiles = useCallback(async () => {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core")
-      const paths = await invoke<string[]>("pick_files")
-      if (paths && paths.length > 0) {
-        const metas = await Promise.all(
-          paths.map(async (path: string) => {
-            const meta = await invoke<{ name: string; size: number }>("get_file_meta", { path })
-            return { path, name: meta.name, size: meta.size }
-          })
-        )
-        setPendingFiles((prev) => [...prev, ...metas])
+    if (isTauri) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core")
+        const paths = await invoke<string[]>("pick_files")
+        if (paths && paths.length > 0) {
+          const metas = await Promise.all(
+            paths.map(async (path: string) => {
+              const meta = await invoke<{ name: string; size: number }>("get_file_meta", { path })
+              return { path, name: meta.name, size: meta.size }
+            })
+          )
+          setPendingFiles((prev) => [...prev, ...metas])
+        }
+      } catch (e) {
+        console.error("pick_files failed:", e)
       }
-    } catch {
-      // web fallback: use file input
+    } else {
+      // web: 直接用浏览器文件选择
       const input = document.createElement("input")
       input.type = "file"
       input.multiple = true
@@ -59,16 +64,21 @@ export function ChatPage() {
 
   const handleSend = useCallback(async () => {
     if (!deviceId || pendingFiles.length === 0) return
-    try {
-      const { invoke } = await import("@tauri-apps/api/core")
-      await invoke("send_files", {
-        targetId: deviceId,
-        targetName: device?.name || "unknown",
-        paths: pendingFiles.map((f) => f.path),
-      })
+    if (isTauri) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core")
+        await invoke("send_files", {
+          targetId: deviceId,
+          targetName: device?.name || "unknown",
+          paths: pendingFiles.map((f) => f.path),
+        })
+        setPendingFiles([])
+      } catch (e: any) {
+        console.error("send failed", e)
+      }
+    } else {
+      console.log("Web端发送文件：", pendingFiles)
       setPendingFiles([])
-    } catch (e: any) {
-      console.error("send failed", e)
     }
   }, [deviceId, pendingFiles, device])
 

@@ -21,7 +21,11 @@ export function useWebRelay() {
     }
 
     if (!deviceIdRef.current) {
-      deviceIdRef.current = "device-" + Math.random().toString(36).slice(2, 10)
+      // 生成有效的 UUID v4 格式（中继服务器要求 device_id 必须是 UUID）
+      deviceIdRef.current = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0
+        return (c === "x" ? r : (r & 0x3) | 0x8).toString(16)
+      })
     }
 
     const ws = new WebSocket(url)
@@ -33,8 +37,8 @@ export function useWebRelay() {
       ws.send(JSON.stringify({
         type: "register",
         device_id: deviceIdRef.current,
-        device_name: "Device-" + deviceIdRef.current.slice(0, 6),
-        device_type: "desktop",
+        device_name: "Web-" + deviceIdRef.current.slice(0, 6),
+        device_type: "web",
       }))
       setStatus({ state: "relay" })
       console.log("[relay] connected to", url)
