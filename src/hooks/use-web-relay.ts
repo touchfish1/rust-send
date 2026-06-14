@@ -63,6 +63,7 @@ export function useWebRelay() {
               name: String(d.name || "Unknown"),
               deviceType: (d.deviceType || "desktop") as "desktop" | "web",
               lastSeen: String(d.lastSeen || new Date().toISOString()),
+              status: "online" as const,
             }))
           console.log("[relay] device_list received:", devices.length, "devices")
           setDevices(devices)
