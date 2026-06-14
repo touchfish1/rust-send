@@ -1,10 +1,12 @@
 use crate::core::file::{FileMeta, TransferRecord, TransferState};
 use crate::core::peer::PeerHandle;
 use crate::AppState;
+use std::sync::Arc;
 use tauri::State;
 
 #[tauri::command]
 pub async fn send_files(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     target_id: String,
     target_name: String,
@@ -28,9 +30,28 @@ pub async fn send_files(
         });
     }
 
-    let relay = state.relay_client.lock().await;
-    let client = relay.as_ref().ok_or("relay not connected")?.clone();
-    drop(relay);
+    let client = {
+        let relay = state.relay_client.lock().await;
+        if let Some(ref c) = *relay {
+            c.clone()
+        } else {
+            drop(relay);
+            let (url, did, dname) = {
+                let config = state.config.lock().map_err(|e| e.to_string())?;
+                (config.relay_url.clone().unwrap_or_default(), config.device_id, config.device_name.clone())
+            };
+            if url.is_empty() {
+                return Err("relay not configured".into());
+            }
+            let (new_client, _) = crate::relay::client::RelayClient::connect(&url, did, &dname)
+                .await
+                .map_err(|e| format!("relay connect failed: {}", e))?;
+            let new_client = Arc::new(new_client);
+            let mut relay = state.relay_client.lock().await;
+            *relay = Some(new_client.clone());
+            new_client
+        }
+    };
 
     // 通过中继发送传输请求
     client

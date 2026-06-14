@@ -37,11 +37,18 @@ export function useWebRelay() {
       ws.send(JSON.stringify({
         type: "register",
         device_id: deviceIdRef.current,
-        device_name: "Web-" + deviceIdRef.current.slice(0, 6),
-        device_type: "web",
+        device_name: "Device-" + deviceIdRef.current.slice(0, 6),
+        device_type: "desktop",
       }))
       setStatus({ state: "relay" })
       console.log("[relay] connected to", url)
+
+      // Tauri 模式下同时连接 Rust 中继客户端（用于文件传输）
+      if (typeof window !== "undefined" && !!(window as any).__TAURI_INTERNALS__) {
+        import("@tauri-apps/api/core").then(({ invoke }) => {
+          invoke("connect_relay", { url }).catch((e: any) => console.warn("[relay] Rust client connect:", e))
+        })
+      }
     }
 
     ws.onmessage = (e) => {
