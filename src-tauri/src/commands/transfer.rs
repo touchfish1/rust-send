@@ -1,29 +1,33 @@
 use crate::core::file::{FileMeta, TransferRecord, TransferState};
 use crate::core::peer::PeerHandle;
-use crate::AppState;
-use std::sync::Arc;
+use crate::{AppState, PendingOutgoingTransfer};
 use tauri::State;
 
 #[tauri::command]
 pub async fn send_files(
-    app: tauri::AppHandle,
     state: State<'_, AppState>,
     target_id: String,
     target_name: String,
     paths: Vec<String>,
+    file_ids: Option<Vec<String>>,
 ) -> Result<(), String> {
     let target = uuid::Uuid::parse_str(&target_id).map_err(|e| e.to_string())?;
 
     let mut files = Vec::new();
-    for p in &paths {
+    for (index, p) in paths.iter().enumerate() {
         let meta = tokio::fs::metadata(p).await.map_err(|e| e.to_string())?;
         let name = std::path::Path::new(p)
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
+        let id = file_ids
+            .as_ref()
+            .and_then(|ids| ids.get(index))
+            .and_then(|id| uuid::Uuid::parse_str(id).ok())
+            .unwrap_or_else(uuid::Uuid::new_v4);
         files.push(FileMeta {
-            id: uuid::Uuid::new_v4(),
+            id,
             name,
             size: meta.len(),
             mime_type: "application/octet-stream".into(),
@@ -36,20 +40,15 @@ pub async fn send_files(
             c.clone()
         } else {
             drop(relay);
-            let (url, did, dname) = {
+            let url = {
                 let config = state.config.lock().map_err(|e| e.to_string())?;
-                (config.relay_url.clone().unwrap_or_default(), config.device_id, config.device_name.clone())
+                config.relay_url.clone().unwrap_or_default()
             };
-            if url.is_empty() {
-                return Err("relay not configured".into());
-            }
-            let (new_client, _) = crate::relay::client::RelayClient::connect(&url, did, &dname)
-                .await
-                .map_err(|e| format!("relay connect failed: {}", e))?;
-            let new_client = Arc::new(new_client);
-            let mut relay = state.relay_client.lock().await;
-            *relay = Some(new_client.clone());
-            new_client
+            return Err(if url.is_empty() {
+                "relay not configured".into()
+            } else {
+                "relay not connected".into()
+            });
         }
     };
 
@@ -58,15 +57,15 @@ pub async fn send_files(
         .send_transfer_request(target, &files)
         .map_err(|e| e.to_string())?;
 
-    let peer = PeerHandle::Relay {
+    let pending = PendingOutgoingTransfer {
+        target_name,
+        files,
+        paths,
         client,
-        peer_id: target,
     };
+    state.pending_outgoing.lock().await.insert(target, pending);
 
-    let mut engine = state.engine.lock().await;
-    engine.start_send(peer, target_name, files, paths);
-
-    tracing::info!("send_files started: target={}", target);
+    tracing::info!("send_files requested: target={}", target);
     Ok(())
 }
 
@@ -131,9 +130,9 @@ pub async fn reject_transfer(
 ) -> Result<(), String> {
     let _source = uuid::Uuid::parse_str(&source_id).map_err(|e| e.to_string())?;
 
-    let relay = state.relay_client.lock().await;
-    if let Some(client) = relay.as_ref() {
-        client
+        let relay = state.relay_client.lock().await;
+        if let Some(client) = relay.as_ref() {
+            client
             .send_transfer_response(_source, false, None)
             .ok();
     }

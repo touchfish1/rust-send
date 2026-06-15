@@ -1,6 +1,6 @@
 use crate::core::device::DeviceInfo;
 use crate::core::file::FileMeta;
-use crate::core::protocol::SignalingMessage;
+use crate::core::protocol::{PeerMessage, SignalingMessage};
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,6 +35,13 @@ pub enum RelayEvent {
     },
     TransferRejected {
         target_id: uuid::Uuid,
+    },
+    ChatMessage {
+        source_id: uuid::Uuid,
+        source_name: String,
+        message_id: String,
+        text: String,
+        sent_at: String,
     },
     RelayData {
         file_id: uuid::Uuid,
@@ -162,6 +169,26 @@ impl RelayClient {
                             let Ok(target_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
                             RelayEvent::TransferRejected { target_id }
                         }
+                        "chat_message" => {
+                            let Ok(source_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
+                            let source_name = parsed["source_name"].as_str().unwrap_or("unknown").to_string();
+                            let message_id = parsed["message_id"]
+                                .as_str()
+                                .map(ToString::to_string)
+                                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                            let text = parsed["text"].as_str().unwrap_or("").to_string();
+                            let sent_at = parsed["sent_at"]
+                                .as_str()
+                                .map(ToString::to_string)
+                                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+                            RelayEvent::ChatMessage {
+                                source_id,
+                                source_name,
+                                message_id,
+                                text,
+                                sent_at,
+                            }
+                        }
                         "relay_data" => {
                             let _source_id = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()).ok();
                             let data_b64 = parsed["data"].as_str().unwrap_or("");
@@ -169,14 +196,7 @@ impl RelayClient {
                                 Ok(d) => d,
                                 Err(_) => continue,
                             };
-                            let file_id = if raw.len() >= 16 {
-                                match uuid::Uuid::from_slice(&raw[..16]) {
-                                    Ok(id) => id,
-                                    Err(_) => continue,
-                                }
-                            } else {
-                                continue
-                            };
+                            let Some(file_id) = extract_relay_file_id(&raw) else { continue };
                             RelayEvent::RelayData { file_id, data: Bytes::from(raw) }
                         }
                         "cancel" => {
@@ -263,13 +283,31 @@ impl RelayClient {
         conflict: Option<&str>,
     ) -> Result<(), String> {
         let mut payload = serde_json::json!({
-            "type": if accepted { "transfer_accept" } else { "transfer_response" },
+            "type": if accepted { "transfer_accept" } else { "transfer_reject" },
             "target_id": target_id,
             "accepted": accepted,
         });
         if let Some(c) = conflict {
             payload["conflict"] = serde_json::json!(c);
         }
+        self.write_tx
+            .send(payload.to_string())
+            .map_err(|_| "relay disconnected".to_string())
+    }
+
+    pub fn send_chat_message(
+        &self,
+        target_id: uuid::Uuid,
+        message_id: &str,
+        text: &str,
+    ) -> Result<(), String> {
+        let payload = serde_json::json!({
+            "type": "chat_message",
+            "target_id": target_id,
+            "message_id": message_id,
+            "text": text,
+            "sent_at": chrono::Utc::now().to_rfc3339(),
+        });
         self.write_tx
             .send(payload.to_string())
             .map_err(|_| "relay disconnected".to_string())
@@ -353,5 +391,28 @@ impl RelayClient {
         self.write_tx
             .send(payload)
             .map_err(|_| "relay disconnected".to_string())
+    }
+}
+
+fn extract_relay_file_id(raw: &[u8]) -> Option<uuid::Uuid> {
+    if let Ok(text) = std::str::from_utf8(raw) {
+        if let Ok(msg) = serde_json::from_str::<PeerMessage>(text) {
+            return match msg {
+                PeerMessage::FileHeader { file_id, .. }
+                | PeerMessage::Ack { file_id, .. }
+                | PeerMessage::Nack { file_id, .. }
+                | PeerMessage::Complete { file_id, .. }
+                | PeerMessage::CompleteAck { file_id }
+                | PeerMessage::Error { file_id, .. }
+                | PeerMessage::ChunkRequest { file_id, .. } => Some(file_id),
+                PeerMessage::BatchComplete { .. } => None,
+            };
+        }
+    }
+
+    if raw.len() >= 16 {
+        uuid::Uuid::from_slice(&raw[..16]).ok()
+    } else {
+        None
     }
 }

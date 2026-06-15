@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -9,6 +8,8 @@ pub struct DeviceInfo {
     pub id: uuid::Uuid,
     pub name: String,
     pub device_type: String,
+    pub ip_address: Option<String>,
+    pub connected_at: String,
     pub last_seen: String,
 }
 
@@ -17,6 +18,9 @@ pub struct WsSession {
     pub session_id: uuid::Uuid,
     pub device_id: uuid::Uuid,
     pub device_name: String,
+    pub device_type: String,
+    pub ip_address: Option<String>,
+    pub connected_at: String,
     pub sender: mpsc::UnboundedSender<String>,
 }
 
@@ -36,9 +40,12 @@ impl RoomState {
         session_id: uuid::Uuid,
         device_id: uuid::Uuid,
         device_name: String,
+        device_type: String,
+        ip_address: Option<String>,
         sender: mpsc::UnboundedSender<String>,
     ) -> Vec<DeviceInfo> {
         let mut sessions = self.sessions.write().await;
+        let connected_at = chrono::Utc::now().to_rfc3339();
 
         // 相同 device_id 的旧会话踢掉
         if let Some(old) = sessions.get(&device_id) {
@@ -51,6 +58,9 @@ impl RoomState {
                 session_id,
                 device_id,
                 device_name,
+                device_type,
+                ip_address,
+                connected_at,
                 sender,
             },
         );
@@ -58,9 +68,14 @@ impl RoomState {
         self.build_device_list(&sessions)
     }
 
-    pub async fn remove(&self, device_id: &uuid::Uuid) {
+    pub async fn remove(&self, device_id: &uuid::Uuid, session_id: &uuid::Uuid) {
         let mut sessions = self.sessions.write().await;
-        sessions.remove(device_id);
+        if sessions
+            .get(device_id)
+            .is_some_and(|session| &session.session_id == session_id)
+        {
+            sessions.remove(device_id);
+        }
     }
 
     pub async fn route(&self, target_id: &uuid::Uuid, message: &str) -> Result<(), ()> {
@@ -96,7 +111,9 @@ impl RoomState {
             .map(|s| DeviceInfo {
                 id: s.device_id,
                 name: s.device_name.clone(),
-                device_type: "desktop".into(),
+                device_type: s.device_type.clone(),
+                ip_address: s.ip_address.clone(),
+                connected_at: s.connected_at.clone(),
                 last_seen: chrono::Utc::now().to_rfc3339(),
             })
             .collect()

@@ -9,8 +9,11 @@ import { useDeviceStore } from "@/stores/device-store"
 import { useTransferStore } from "@/stores/transfer-store"
 import { useDeviceEvents } from "@/hooks/use-device-events"
 import { useTransferEvents } from "@/hooks/use-transfer-events"
-import { useWebRelay } from "@/hooks/use-web-relay"
+import { useAutoConnect } from "@/hooks/use-auto-connect"
+import { useChatEvents } from "@/hooks/use-chat-events"
+import { useLocalDeviceInfo } from "@/hooks/use-local-device-info"
 import { isTauri } from "@/hooks/use-tauri-event"
+import { useChatStore } from "@/stores/chat-store"
 import { useCallback } from "react"
 
 export default function App() {
@@ -23,7 +26,9 @@ export default function App() {
 
   useDeviceEvents()
   useTransferEvents()
-  useWebRelay()
+  useChatEvents()
+  useLocalDeviceInfo()
+  useAutoConnect()
 
   const path = window.location.pathname
   const currentPage = path === "/" ? "welcome" : path.split("/")[1]
@@ -39,15 +44,62 @@ export default function App() {
   )
 
   const handleAcceptTransfer = useCallback(() => {
-    if (incoming) {
-      setIncoming(null)
-      navigate(`/chat/${incoming.sourceId}`)
-    }
+    if (!incoming) return
+
+    ;(async () => {
+      try {
+        if (isTauri()) {
+          const { invoke } = await import("@tauri-apps/api/core")
+          const saveDir = await invoke<string>("get_downloads_dir")
+          await invoke("accept_transfer", {
+            sourceId: incoming.sourceId,
+            saveDir,
+            files: incoming.files.map((f) => ({
+              id: f.id,
+              name: f.name,
+              size: f.size,
+              mime_type: f.mimeType,
+            })),
+          })
+        } else {
+          ;(window as any).__RUST_SEND_WEB_RELAY__?.acceptTransfer(incoming)
+        }
+        useChatStore.getState().markFilesForPeer(
+          incoming.sourceId,
+          incoming.files.map((f) => f.id),
+          "received"
+        )
+        setIncoming(null)
+        navigate(`/chat/${incoming.sourceId}`)
+      } catch (e) {
+        console.error("accept transfer failed", e)
+      }
+    })()
   }, [incoming, setIncoming, navigate])
 
   const handleRejectTransfer = useCallback(() => {
-    setIncoming(null)
-  }, [setIncoming])
+    if (!incoming) return
+
+    ;(async () => {
+      try {
+        if (isTauri()) {
+          const { invoke } = await import("@tauri-apps/api/core")
+          await invoke("reject_transfer", { sourceId: incoming.sourceId })
+        } else {
+          ;(window as any).__RUST_SEND_WEB_RELAY__?.rejectTransfer(incoming.sourceId)
+        }
+        useChatStore.getState().markFilesForPeer(
+          incoming.sourceId,
+          incoming.files.map((f) => f.id),
+          "failed"
+        )
+      } catch (e) {
+        console.error("reject transfer failed", e)
+      } finally {
+        setIncoming(null)
+      }
+    })()
+  }, [incoming, setIncoming])
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">

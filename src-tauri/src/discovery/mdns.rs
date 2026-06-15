@@ -68,6 +68,8 @@ impl MdnsDiscovery {
                             name,
                             device_type: DeviceType::Desktop,
                             addr: addr.and_then(|a| Some(SocketAddr::new(a, 0))),
+                            ip_address: addr.map(|a| a.to_string()),
+                            connected_at: None,
                             last_seen: chrono::Utc::now(),
                         }));
                     }

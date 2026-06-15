@@ -1,3 +1,5 @@
+import { Minus, Square, X } from "lucide-react"
+
 interface TitleBarProps {
   title?: string
   onMinimize?: () => void
@@ -9,48 +11,82 @@ interface TitleBarProps {
 export function TitleBar({ title, onMinimize, onMaximize, onClose, isTauri }: TitleBarProps) {
   if (!isTauri) return null
 
+  const handleMinimize = async () => {
+    if (onMinimize) return onMinimize()
+    const { getCurrentWindow } = await import("@tauri-apps/api/window")
+    await getCurrentWindow().minimize()
+  }
+
+  const handleMaximize = async () => {
+    if (onMaximize) return onMaximize()
+    const { getCurrentWindow } = await import("@tauri-apps/api/window")
+    await getCurrentWindow().toggleMaximize()
+  }
+
+  const handleClose = async () => {
+    if (onClose) return onClose()
+    const { getCurrentWindow } = await import("@tauri-apps/api/window")
+    await getCurrentWindow().close()
+  }
+
   return (
-    <div
-      className="flex h-9 items-center justify-between border-b border-border/30 bg-muted/20 px-3 select-none"
-      data-tauri-drag-region
-    >
-      {/* 左侧：Logo */}
-      <div className="flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-[3px] bg-primary text-[10px] text-primary-foreground font-serif leading-none">
-          送
-        </span>
-        <span className="text-xs font-medium text-foreground/60 tracking-wider">
-          rust-send
-        </span>
+    <div className="flex h-10 items-center border-b border-border/30 bg-muted/20 select-none">
+      <div
+        className="flex h-full min-w-0 flex-1 items-center justify-between px-3"
+        data-tauri-drag-region
+      >
+        {/* 左侧：Logo */}
+        <div className="flex items-center gap-2" data-tauri-drag-region>
+          <span
+            className="flex h-5 w-5 items-center justify-center rounded-[3px] bg-primary text-[10px] text-primary-foreground font-serif leading-none"
+            data-tauri-drag-region
+          >
+            送
+          </span>
+          <span
+            className="text-xs font-medium text-foreground/60 tracking-wider"
+            data-tauri-drag-region
+          >
+            rust-send
+          </span>
+        </div>
+
+        {/* 中间：当前页面标题 */}
+        {title && (
+          <span className="truncate text-xs text-foreground/40" data-tauri-drag-region>
+            {title}
+          </span>
+        )}
       </div>
 
-      {/* 中间：当前页面标题 */}
-      {title && (
-        <span className="text-xs text-foreground/40">
-          {title}
-        </span>
-      )}
-
       {/* 右侧：窗口控制 */}
-      {/* Tauri v2 使用 data-tauri-drag-region，macOS 用原生交通灯，这里仅占位 */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex h-full shrink-0 items-center gap-1 px-2">
         <button
-          onClick={onMinimize}
-          className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] text-foreground/20 hover:text-foreground/60 transition-colors"
+          type="button"
+          onClick={handleMinimize}
+          aria-label="最小化"
+          title="最小化"
+          className="flex h-8 w-10 items-center justify-center rounded-sm text-foreground/45 transition-colors hover:bg-muted hover:text-foreground/75 active:bg-muted/80"
         >
-          —
+          <Minus className="h-4 w-4" strokeWidth={1.75} />
         </button>
         <button
-          onClick={onMaximize}
-          className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] text-foreground/20 hover:text-foreground/60 transition-colors"
+          type="button"
+          onClick={handleMaximize}
+          aria-label="最大化"
+          title="最大化"
+          className="flex h-8 w-10 items-center justify-center rounded-sm text-foreground/45 transition-colors hover:bg-muted hover:text-foreground/75 active:bg-muted/80"
         >
-          □
+          <Square className="h-3.5 w-3.5" strokeWidth={1.75} />
         </button>
         <button
-          onClick={onClose}
-          className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] text-foreground/20 hover:text-destructive transition-colors"
+          type="button"
+          onClick={handleClose}
+          aria-label="关闭"
+          title="关闭"
+          className="flex h-8 w-10 items-center justify-center rounded-sm text-foreground/45 transition-colors hover:bg-destructive hover:text-destructive-foreground active:bg-destructive/90"
         >
-          ✕
+          <X className="h-4 w-4" strokeWidth={1.75} />
         </button>
       </div>
     </div>

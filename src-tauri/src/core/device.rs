@@ -17,5 +17,9 @@ pub struct DeviceInfo {
     pub device_type: DeviceType,
     #[serde(default)]
     pub addr: Option<SocketAddr>,
+    #[serde(default)]
+    pub ip_address: Option<String>,
+    #[serde(default)]
+    pub connected_at: Option<DateTime<Utc>>,
     pub last_seen: DateTime<Utc>,
 }

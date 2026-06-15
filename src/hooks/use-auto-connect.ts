@@ -12,29 +12,38 @@ export function useAutoConnect() {
   const setStatus = useDeviceStore((s) => s.setStatus)
   const connectedRef = useRef(false)
 
-  // Web 端：直接用 WebSocket
+  // Web 端：直接用 WebSocket；Tauri 端该 hook 内部会 no-op。
   useWebRelay()
 
   // Tauri 端：通过 invoke 调用 connect_relay 命令
   useEffect(() => {
     if (!isTauri()) return
-    if (connectedRef.current) return
     if (!relayUrl) return
 
-    connectedRef.current = true
+    let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
 
-    ;(async () => {
+    const connect = async () => {
+      if (cancelled || connectedRef.current) return
       try {
         const { invoke } = await import("@tauri-apps/api/core")
         await invoke("connect_relay", { url: relayUrl })
         console.log("Tauri relay connected:", relayUrl)
+        setStatus({ state: "relay" })
+        connectedRef.current = true
       } catch (e) {
         console.warn("Tauri relay connect failed:", e)
         setStatus({ state: "offline" })
-        connectedRef.current = false
-        // 5 秒后重试
-        setTimeout(() => { connectedRef.current = false }, 5000)
+        retryTimer = setTimeout(connect, 5000)
       }
-    })()
+    }
+
+    connect()
+
+    return () => {
+      cancelled = true
+      connectedRef.current = false
+      if (retryTimer) clearTimeout(retryTimer)
+    }
   }, [relayUrl, setStatus])
 }

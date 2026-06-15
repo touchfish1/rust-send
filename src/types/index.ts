@@ -3,6 +3,8 @@ export interface DeviceInfo {
   name: string
   deviceType: "desktop" | "web"
   addr?: string
+  ipAddress?: string
+  connectedAt?: string
   lastSeen: string
   status?: "online" | "relay" | "offline"
 }
@@ -72,4 +74,37 @@ export interface TransferProgress {
 
 export interface ConnectionStatus {
   state: "lan" | "relay" | "offline"
+}
+
+export type ChatMessageKind = "text" | "files"
+export type ChatMessageDirection = "incoming" | "outgoing"
+export type ChatMessageStatus =
+  | "pending"
+  | "sending"
+  | "sent"
+  | "received"
+  | "completed"
+  | "failed"
+
+export interface ChatAttachment {
+  id: string
+  name: string
+  size: number
+  mimeType: string
+  bytesSent?: number
+  bytesTotal?: number
+  speed?: number
+  status?: ChatMessageStatus
+}
+
+export interface ChatMessage {
+  id: string
+  peerId: string
+  peerName: string
+  direction: ChatMessageDirection
+  kind: ChatMessageKind
+  text?: string
+  files?: ChatAttachment[]
+  createdAt: string
+  status: ChatMessageStatus
 }

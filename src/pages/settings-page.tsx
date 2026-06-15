@@ -3,9 +3,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { useSettingsStore } from "@/stores/settings-store"
+import { useDeviceStore } from "@/stores/device-store"
 import { useToast } from "@/components/ui/toast"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useTheme } from "next-themes"
+import { isTauri } from "@/hooks/use-tauri-event"
+import { saveWebDeviceName } from "@/hooks/use-local-device-info"
 
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -54,23 +57,44 @@ export function SettingsPage() {
   const setAutoAcceptLan = useSettingsStore((s) => s.setAutoAcceptLan)
   const setRelayUrl = useSettingsStore((s) => s.setRelayUrl)
   const setTheme = useSettingsStore((s) => s.setTheme)
+  const localId = useDeviceStore((s) => s.localId)
+  const localName = useDeviceStore((s) => s.localName)
+  const setLocalInfo = useDeviceStore((s) => s.setLocalInfo)
   const { toast } = useToast()
   const { setTheme: setNextTheme } = useTheme()
 
-  const [deviceName, setDeviceName] = useState("rust-send")
+  const [deviceName, setDeviceName] = useState(localName)
   const [testingRelay, setTestingRelay] = useState(false)
 
+  useEffect(() => {
+    if (localName) {
+      setDeviceName(localName)
+    }
+  }, [localName])
+
   const handleNameBlur = useCallback(async () => {
-    if (deviceName.length < 1 || deviceName.length > 32) {
+    const name = deviceName.trim()
+    if (name.length < 1 || name.length > 32) {
       toast("名称长度应为 1-32 字符", "error")
       return
     }
     try {
-      const { invoke } = await import("@tauri-apps/api/core")
-      await invoke("set_device_name", { name: deviceName })
+      if (isTauri()) {
+        const { invoke } = await import("@tauri-apps/api/core")
+        await invoke("set_device_name", { name })
+        if (relayUrl.startsWith("ws://") || relayUrl.startsWith("wss://")) {
+          await invoke("connect_relay", { url: relayUrl })
+        }
+      } else {
+        saveWebDeviceName(name)
+      }
+      setDeviceName(name)
+      setLocalInfo(localId, name)
       toast("已保存", "success")
-    } catch { /* web */ }
-  }, [deviceName, toast])
+    } catch {
+      toast("保存失败", "error")
+    }
+  }, [deviceName, localId, relayUrl, setLocalInfo, toast])
 
   const handlePickDir = useCallback(async () => {
     try {

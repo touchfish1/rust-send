@@ -30,6 +30,8 @@ pub fn get_device_info(state: State<AppState>) -> DeviceInfo {
         name: config.device_name.clone(),
         device_type: DeviceType::Desktop,
         addr: None,
+        ip_address: None,
+        connected_at: Some(chrono::Utc::now()),
         last_seen: chrono::Utc::now(),
     }
 }

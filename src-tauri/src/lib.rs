@@ -10,8 +10,10 @@ mod transfer;
 pub use error::AppError;
 
 use core::file::ProgressEvent;
+use core::file::FileMeta;
 use relay::client::RelayClient;
 use storage::{config::Config, history::TransferHistory};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use transfer::engine::{TransferConfig, TransferEngine};
@@ -24,8 +26,17 @@ pub struct AppState {
     pub history: std::sync::Mutex<TransferHistory>,
     pub engine: Arc<tokio::sync::Mutex<TransferEngine>>,
     pub relay_client: Arc<tokio::sync::Mutex<Option<Arc<RelayClient>>>>,
+    pub pending_outgoing: Arc<tokio::sync::Mutex<HashMap<uuid::Uuid, PendingOutgoingTransfer>>>,
     /// file_id → data sender channel for routing incoming relay data to receivers
     pub receiver_data_channels: Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>>,
+}
+
+#[derive(Clone)]
+pub struct PendingOutgoingTransfer {
+    pub target_name: String,
+    pub files: Vec<FileMeta>,
+    pub paths: Vec<String>,
+    pub client: Arc<RelayClient>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -50,6 +61,7 @@ pub fn run() {
             history: std::sync::Mutex::new(history),
             engine: Arc::new(tokio::sync::Mutex::new(engine)),
             relay_client: Arc::new(tokio::sync::Mutex::new(None)),
+            pending_outgoing: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -137,6 +149,7 @@ pub fn run() {
             commands::file::get_downloads_dir,
             commands::network::connect_relay,
             commands::network::disconnect_relay,
+            commands::network::send_chat_message,
             commands::transfer::send_files,
             commands::transfer::accept_transfer,
             commands::transfer::reject_transfer,

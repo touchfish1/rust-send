@@ -2,13 +2,17 @@ mod room;
 mod ws;
 
 use axum::{
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        ConnectInfo, State,
+    },
     response::IntoResponse,
     routing::get,
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
 use room::RoomState;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -27,17 +31,20 @@ async fn main() {
         .unwrap();
 
     tracing::info!("relay-server listening on 0.0.0.0:8080");
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
+        .await
+        .unwrap();
 }
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    state: axum::extract::State<Arc<RoomState>>,
+    State(state): State<Arc<RoomState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state.0.clone()))
+    ws.on_upgrade(move |socket| handle_socket(socket, state.clone(), addr))
 }
 
-async fn handle_socket(socket: WebSocket, state: Arc<RoomState>) {
+async fn handle_socket(socket: WebSocket, state: Arc<RoomState>, client_addr: SocketAddr) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     let Some(reg) = ws::wait_register(&mut ws_receiver).await else {
@@ -50,7 +57,14 @@ async fn handle_socket(socket: WebSocket, state: Arc<RoomState>) {
 
     // 加入房间
     let devices = state
-        .add(session_id, reg.device_id, reg.name.clone(), write_tx)
+        .add(
+            session_id,
+            reg.device_id,
+            reg.name.clone(),
+            reg.device_type.clone(),
+            Some(client_addr.ip().to_string()),
+            write_tx,
+        )
         .await;
 
     tracing::info!(
@@ -84,7 +98,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<RoomState>) {
     let read_dev_name = reg.name.clone();
     let read_tx_clone = read_tx.clone();
     let read = tokio::spawn(async move {
-        let mut rx = read_tx_clone;
+        let rx = read_tx_clone;
         while let Some(msg) = ws_receiver.next().await {
             let text = match msg {
                 Ok(Message::Text(t)) => t,
@@ -142,7 +156,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<RoomState>) {
         _ = read => {},
     }
 
-    state.remove(&reg.device_id).await;
+    state.remove(&reg.device_id, &session_id).await;
     state.broadcast_device_list().await;
     tracing::info!("device disconnected: {}", reg.name);
 }
