@@ -60,6 +60,8 @@ export interface TransferRecord {
 export interface IncomingTransfer {
   sourceId: string
   sourceName: string
+  offerId?: string
+  expiresAt?: string
   files: { id: string; name: string; size: number; mimeType: string }[]
 }
 
@@ -80,17 +82,23 @@ export type ChatMessageKind = "text" | "files"
 export type ChatMessageDirection = "incoming" | "outgoing"
 export type ChatMessageStatus =
   | "pending"
+  | "available"
+  | "downloading"
   | "sending"
   | "sent"
   | "received"
   | "completed"
   | "failed"
+  | "expired"
 
 export interface ChatAttachment {
   id: string
+  offerId?: string
   name: string
   size: number
   mimeType: string
+  savedPath?: string
+  expiresAt?: string
   bytesSent?: number
   bytesTotal?: number
   speed?: number
@@ -104,6 +112,8 @@ export interface ChatMessage {
   direction: ChatMessageDirection
   kind: ChatMessageKind
   text?: string
+  offerId?: string
+  expiresAt?: string
   files?: ChatAttachment[]
   createdAt: string
   status: ChatMessageStatus

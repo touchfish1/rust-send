@@ -6,7 +6,7 @@ import { createChatId, useChatStore } from "@/stores/chat-store"
 import { formatFileSize, formatTime, getFileIcon } from "@/lib/utils"
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { useDropzone } from "react-dropzone"
-import { FileUp, Globe2, Info, Monitor, Paperclip, Send, X } from "lucide-react"
+import { Download, FileUp, FolderOpen, Globe2, Info, Monitor, Paperclip, Send, X } from "lucide-react"
 import type { ChatAttachment, ChatMessage, DeviceInfo } from "@/types"
 
 type PendingFile = {
@@ -18,6 +18,8 @@ type PendingFile = {
   file?: File
 }
 
+const DEFAULT_FILE_OFFER_TTL_MS = 2 * 60 * 60 * 1000
+
 export function ChatPage() {
   const { deviceId } = useParams<{ deviceId: string }>()
   const devices = useDeviceStore((s) => s.devices)
@@ -25,11 +27,13 @@ export function ChatPage() {
   const messages = useChatStore((s) => s.messages)
   const addMessage = useChatStore((s) => s.addMessage)
   const updateMessageStatus = useChatStore((s) => s.updateMessageStatus)
+  const markFileStatus = useChatStore((s) => s.markFileStatus)
   const isTauri = typeof window !== "undefined" && !!(window as any).__TAURI_INTERNALS__
 
   const [draft, setDraft] = useState("")
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [showDeviceInfo, setShowDeviceInfo] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
   const listRef = useRef<HTMLDivElement | null>(null)
 
   const peerMessages = useMemo(
@@ -46,6 +50,11 @@ export function ChatPage() {
       behavior: "smooth",
     })
   }, [peerMessages.length, pendingFiles.length])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   const addPendingFiles = useCallback((files: PendingFile[]) => {
     setPendingFiles((prev) => [...prev, ...files])
@@ -163,14 +172,17 @@ export function ChatPage() {
 
     if (files.length > 0) {
       const messageId = createChatId()
+      const expiresAt = new Date(Date.now() + DEFAULT_FILE_OFFER_TTL_MS).toISOString()
       const attachments: ChatAttachment[] = files.map((file) => ({
         id: file.id,
+        offerId: messageId,
         name: file.name,
         size: file.size,
         mimeType: file.mimeType,
+        expiresAt,
         bytesSent: 0,
         bytesTotal: file.size,
-        status: "pending",
+        status: "available",
       }))
 
       addMessage({
@@ -179,9 +191,11 @@ export function ChatPage() {
         peerName: device?.name || deviceId,
         direction: "outgoing",
         kind: "files",
+        offerId: messageId,
+        expiresAt,
         files: attachments,
         createdAt: new Date().toISOString(),
-        status: "pending",
+        status: "available",
       })
 
       try {
@@ -192,19 +206,102 @@ export function ChatPage() {
             targetName: device?.name || "unknown",
             paths: files.map((file) => file.path),
             fileIds: files.map((file) => file.id),
+            offerId: messageId,
+            expiresAt,
           })
         } else {
           const webFiles = files
             .filter((file): file is PendingFile & { file: File } => !!file.file)
             .map((file) => ({ id: file.id, file: file.file }))
-          ;(window as any).__RUST_SEND_WEB_RELAY__?.sendFiles(deviceId, webFiles)
+          ;(window as any).__RUST_SEND_WEB_RELAY__?.sendFiles(deviceId, webFiles, messageId, expiresAt)
         }
+        updateMessageStatus(messageId, "sent")
       } catch (e) {
         console.error("send files failed", e)
         updateMessageStatus(messageId, "failed")
       }
     }
   }, [addMessage, device, deviceId, draft, isTauri, pendingFiles, updateMessageStatus])
+
+  const handleDownloadFile = useCallback(
+    async (message: ChatMessage, file: ChatAttachment) => {
+      if (!deviceId) return
+      const expiresAt = file.expiresAt || message.expiresAt
+      if (expiresAt && Date.now() >= Date.parse(expiresAt)) {
+        markFileStatus(file.id, "expired")
+        return
+      }
+      if (device?.status === "offline") {
+        markFileStatus(file.id, "failed")
+        return
+      }
+
+      markFileStatus(file.id, "downloading")
+      try {
+        if (isTauri) {
+          const { invoke } = await import("@tauri-apps/api/core")
+          const saveDir = await invoke<string>("get_downloads_dir")
+          await invoke("accept_transfer", {
+            sourceId: deviceId,
+            sourceName: device?.name || message.peerName || deviceId,
+            offerId: file.offerId || message.offerId || message.id,
+            expiresAt,
+            saveDir,
+            files: [
+              {
+                id: file.id,
+                name: file.name,
+                size: file.size,
+                mime_type: file.mimeType,
+              },
+            ],
+          })
+        } else {
+          ;(window as any).__RUST_SEND_WEB_RELAY__?.requestDownload(
+            {
+              sourceId: deviceId,
+              sourceName: device?.name || message.peerName || deviceId,
+              offerId: file.offerId || message.offerId || message.id,
+              expiresAt,
+              files: [
+                {
+                  id: file.id,
+                  name: file.name,
+                  size: file.size,
+                  mimeType: file.mimeType,
+                },
+              ],
+            },
+            [
+              {
+                id: file.id,
+                name: file.name,
+                size: file.size,
+                mimeType: file.mimeType,
+              },
+            ]
+          )
+        }
+      } catch (e) {
+        console.error("download file failed", e)
+        markFileStatus(file.id, String(e).includes("expired") ? "expired" : "failed")
+      }
+    },
+    [device, deviceId, isTauri, markFileStatus]
+  )
+
+  const handleRevealFile = useCallback(
+    async (path?: string) => {
+      if (!path || !isTauri) return
+      try {
+        const { invoke } = await import("@tauri-apps/api/core")
+        await invoke("reveal_file", { path })
+      } catch (e) {
+        console.error("reveal file failed", e)
+      }
+    },
+    [isTauri]
+  )
 
   const handleRemovePending = useCallback((id: string) => {
     setPendingFiles((prev) => prev.filter((file) => file.id !== id))
@@ -274,7 +371,14 @@ export function ChatPage() {
           ) : (
             <div className="space-y-4">
               {peerMessages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  now={now}
+                  peerOnline={isOnline}
+                  onDownload={handleDownloadFile}
+                  onRevealFile={handleRevealFile}
+                />
               ))}
             </div>
           )}
@@ -430,7 +534,19 @@ function formatDateTime(iso: string) {
   })
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  now,
+  peerOnline,
+  onDownload,
+  onRevealFile,
+}: {
+  message: ChatMessage
+  now: number
+  peerOnline: boolean
+  onDownload: (message: ChatMessage, file: ChatAttachment) => void
+  onRevealFile: (path?: string) => void
+}) {
   const isOutgoing = message.direction === "outgoing"
 
   return (
@@ -449,7 +565,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           ) : (
             <div className="space-y-2">
               {message.files?.map((file) => (
-                <FileBubble key={file.id} file={file} isOutgoing={isOutgoing} />
+                <FileBubble
+                  key={file.id}
+                  file={file}
+                  message={message}
+                  isOutgoing={isOutgoing}
+                  now={now}
+                  peerOnline={peerOnline}
+                  onDownload={onDownload}
+                  onRevealFile={onRevealFile}
+                />
               ))}
             </div>
           )}
@@ -467,22 +592,101 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   )
 }
 
-function FileBubble({ file, isOutgoing }: { file: ChatAttachment; isOutgoing: boolean }) {
+function FileBubble({
+  file,
+  message,
+  isOutgoing,
+  now,
+  peerOnline,
+  onDownload,
+  onRevealFile,
+}: {
+  file: ChatAttachment
+  message: ChatMessage
+  isOutgoing: boolean
+  now: number
+  peerOnline: boolean
+  onDownload: (message: ChatMessage, file: ChatAttachment) => void
+  onRevealFile: (path?: string) => void
+}) {
   const total = file.bytesTotal || file.size || 1
   const sent = file.bytesSent || 0
   const progress = Math.min(100, Math.round((sent / Math.max(total, 1)) * 100))
-  const showProgress = file.status === "sending" || (sent > 0 && progress < 100)
+  const expiresAt = file.expiresAt || message.expiresAt
+  const isExpired = Boolean(expiresAt && now >= Date.parse(expiresAt))
+  const status = isExpired && file.status !== "completed" ? "expired" : file.status
+  const showProgress =
+    status === "sending" ||
+    status === "downloading" ||
+    (sent > 0 && progress < 100)
+  const canDownload =
+    !isOutgoing &&
+    peerOnline &&
+    !isExpired &&
+    (status === "available" || status === "pending" || status === "failed")
+  const canReveal = status === "completed" && Boolean(file.savedPath)
 
   return (
-    <div className="min-w-[220px]">
+    <div
+      className={cn("min-w-[220px]", canReveal && "cursor-pointer")}
+      onDoubleClick={() => {
+        if (canReveal) {
+          onRevealFile(file.savedPath)
+        }
+      }}
+      title={canReveal ? "双击打开文件位置" : undefined}
+    >
       <div className="flex items-start gap-2">
         <span className="mt-0.5 text-base">{getFileIcon(file.name)}</span>
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{file.name}</div>
           <div className={cn("text-xs", isOutgoing ? "text-primary-foreground/70" : "text-muted-foreground/65")}>
             {formatFileSize(file.size)}
+            {expiresAt && status !== "completed" && (
+              <span className="ml-1.5">{expiryLabel(expiresAt, now)}</span>
+            )}
           </div>
         </div>
+        {!isOutgoing && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onDownload(message, file)
+            }}
+            disabled={!canDownload}
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border transition-colors",
+              canDownload
+                ? "border-border/50 bg-background/60 text-foreground/75 hover:bg-muted hover:text-foreground"
+                : "border-border/25 text-muted-foreground/35"
+            )}
+            aria-label="下载文件"
+            title={downloadTitle(status, peerOnline, isExpired)}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {canReveal && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onRevealFile(file.savedPath)
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border transition-colors",
+              isOutgoing
+                ? "border-primary-foreground/25 bg-primary-foreground/10 text-primary-foreground/80 hover:bg-primary-foreground/20 hover:text-primary-foreground"
+                : "border-border/50 bg-background/60 text-foreground/75 hover:bg-muted hover:text-foreground"
+            )}
+            aria-label="打开文件位置"
+            title="打开文件位置"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       {showProgress && (
         <div className="mt-2 space-y-1">
@@ -492,14 +696,49 @@ function FileBubble({ file, isOutgoing }: { file: ChatAttachment; isOutgoing: bo
           </div>
         </div>
       )}
+      {!isOutgoing && (
+        <div className="mt-1 text-[11px] text-muted-foreground/55">
+          {downloadTitle(status, peerOnline, isExpired)}
+        </div>
+      )}
     </div>
   )
+}
+
+function expiryLabel(expiresAt: string, now: number) {
+  const expires = Date.parse(expiresAt)
+  if (!Number.isFinite(expires)) return ""
+  const remaining = expires - now
+  if (remaining <= 0) return "已过期"
+  const minutes = Math.ceil(remaining / 60000)
+  if (minutes < 60) return `${minutes} 分钟后过期`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest > 0 ? `${hours}小时${rest}分钟后过期` : `${hours}小时后过期`
+}
+
+function downloadTitle(
+  status: ChatAttachment["status"],
+  peerOnline: boolean,
+  isExpired: boolean
+) {
+  if (status === "completed") return "已下载"
+  if (status === "downloading") return "下载中"
+  if (status === "sending") return "发送中"
+  if (isExpired || status === "expired") return "已过期"
+  if (!peerOnline) return "发送方离线，无法下载"
+  if (status === "failed") return "下载失败，可重试"
+  return "下载"
 }
 
 function statusLabel(status: ChatMessage["status"]) {
   switch (status) {
     case "pending":
       return "等待接收"
+    case "available":
+      return "可下载"
+    case "downloading":
+      return "下载中"
     case "sending":
       return "发送中"
     case "sent":
@@ -510,6 +749,8 @@ function statusLabel(status: ChatMessage["status"]) {
       return "已完成"
     case "failed":
       return "失败"
+    case "expired":
+      return "已过期"
     default:
       return ""
   }

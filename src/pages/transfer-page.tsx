@@ -1,8 +1,10 @@
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { useTransferStore } from "@/stores/transfer-store"
+import { useChatStore } from "@/stores/chat-store"
 import { formatFileSize, formatSpeed, formatTime, getFileIcon } from "@/lib/utils"
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
+import type { ChatMessage, TransferRecord } from "@/types"
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -42,13 +44,19 @@ function progressVariant(status: string): "default" | "warning" | "success" | "e
 export function TransferPage() {
   const active = useTransferStore((s) => s.active)
   const history = useTransferStore((s) => s.history)
+  const messages = useChatStore((s) => s.messages)
+  const clearFileMessages = useChatStore((s) => s.clearFileMessages)
   const cancelTransfer = useTransferStore((s) => s.cancelTransfer)
   const clearHistory = useTransferStore((s) => s.clearHistory)
 
   const activeTransfers = Array.from(active.values()).filter(
     (t) => t.status === "transferring" || t.status === "paused" || t.status === "verifying" || t.status === "queued"
   )
-  const completedTransfers = history
+  const chatFileHistory = useMemo(() => buildChatFileHistory(messages), [messages])
+  const completedTransfers = useMemo(
+    () => [...chatFileHistory, ...history].sort((a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt)),
+    [chatFileHistory, history]
+  )
 
   const handleCancel = useCallback(async (id: string) => {
     try {
@@ -79,7 +87,8 @@ export function TransferPage() {
       await invoke("clear_history")
     } catch { /* ignore */ }
     clearHistory()
-  }, [clearHistory])
+    clearFileMessages()
+  }, [clearFileMessages, clearHistory])
 
   return (
     <div className="flex h-full flex-col p-8 animate-ink-fade">
@@ -192,7 +201,7 @@ export function TransferPage() {
         <div className="mt-8">
           <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground/60 tracking-wide">
             <span className="inline-block h-3 w-0.5 rounded-full bg-border/60" />
-            已完成 · {completedTransfers.length}
+            历史记录 · {completedTransfers.length}
           </div>
           <div className="space-y-2">
             {completedTransfers.map((r) => (
@@ -234,11 +243,50 @@ export function TransferPage() {
         <div className="flex flex-1 flex-col items-center justify-center text-center text-sm text-muted-foreground/60">
           <span className="mb-3 text-3xl opacity-40">📭</span>
           <p>还没有传输记录</p>
-          <p className="mt-1 text-xs text-muted-foreground/40">选择左侧设备开始发送文件</p>
+          <p className="mt-1 text-xs text-muted-foreground/40">聊天中发送或下载文件后会出现在这里</p>
         </div>
       )}
     </div>
   )
+}
+
+function buildChatFileHistory(messages: ChatMessage[]): TransferRecord[] {
+  return messages
+    .filter((message) => message.kind === "files" && message.files?.length)
+    .map((message) => {
+      const files = message.files || []
+      const statuses = files.map((file) => {
+        if (isExpired(file.expiresAt || message.expiresAt) && file.status !== "completed") {
+          return "expired"
+        }
+        return file.status || message.status
+      })
+      const status =
+        statuses.every((status) => status === "completed")
+          ? "completed"
+          : statuses.some((status) => status === "downloading" || status === "sending")
+            ? "transferring"
+            : statuses.every((status) => status === "expired")
+              ? "expired"
+              : statuses.some((status) => status === "failed")
+                ? "failed"
+                : "queued"
+
+      return {
+        id: message.id,
+        direction: message.direction === "incoming" ? "receive" : "send",
+        peerName: message.peerName,
+        fileNames: files.map((file) => file.name),
+        totalSize: files.reduce((sum, file) => sum + file.size, 0),
+        startedAt: message.createdAt,
+        completedAt: message.createdAt,
+        status,
+      } satisfies TransferRecord
+    })
+}
+
+function isExpired(expiresAt?: string) {
+  return Boolean(expiresAt && Date.now() >= Date.parse(expiresAt))
 }
 
 function cn(...classes: (string | undefined | false | null)[]): string {

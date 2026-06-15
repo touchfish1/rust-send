@@ -73,6 +73,7 @@ pub enum ProgressEvent {
         transfer_id: uuid::Uuid,
         file_id: uuid::Uuid,
         file_name: String,
+        saved_path: Option<String>,
     },
     BatchComplete {
         transfer_id: uuid::Uuid,

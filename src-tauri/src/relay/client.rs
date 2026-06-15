@@ -28,13 +28,19 @@ pub enum RelayEvent {
     TransferRequest {
         source_id: uuid::Uuid,
         source_name: String,
+        offer_id: String,
+        expires_at: String,
         files: Vec<FileMeta>,
     },
     TransferAccepted {
         target_id: uuid::Uuid,
+        offer_id: String,
+        file_ids: Vec<uuid::Uuid>,
     },
     TransferRejected {
         target_id: uuid::Uuid,
+        offer_id: String,
+        reason: String,
     },
     ChatMessage {
         source_id: uuid::Uuid,
@@ -158,16 +164,43 @@ impl RelayClient {
                         "transfer_request" => {
                             let Ok(source_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
                             let source_name = parsed["source_name"].as_str().unwrap_or("unknown").to_string();
+                            let offer_id = parsed["offer_id"]
+                                .as_str()
+                                .or_else(|| parsed["offerId"].as_str())
+                                .map(ToString::to_string)
+                                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                            let expires_at = parsed["expires_at"]
+                                .as_str()
+                                .or_else(|| parsed["expiresAt"].as_str())
+                                .map(ToString::to_string)
+                                .unwrap_or_else(|| (chrono::Utc::now() + chrono::Duration::hours(2)).to_rfc3339());
                             let Ok(files) = serde_json::from_value::<Vec<FileMeta>>(parsed["files"].clone()) else { continue };
-                            RelayEvent::TransferRequest { source_id, source_name, files }
+                            RelayEvent::TransferRequest { source_id, source_name, offer_id, expires_at, files }
                         }
                         "transfer_accept" => {
                             let Ok(target_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
-                            RelayEvent::TransferAccepted { target_id }
+                            let offer_id = parsed["offer_id"]
+                                .as_str()
+                                .or_else(|| parsed["offerId"].as_str())
+                                .map(ToString::to_string)
+                                .unwrap_or_default();
+                            let file_ids = parse_file_ids(&parsed);
+                            RelayEvent::TransferAccepted { target_id, offer_id, file_ids }
                         }
                         "transfer_reject" => {
                             let Ok(target_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
-                            RelayEvent::TransferRejected { target_id }
+                            let offer_id = parsed["offer_id"]
+                                .as_str()
+                                .or_else(|| parsed["offerId"].as_str())
+                                .map(ToString::to_string)
+                                .unwrap_or_default();
+                            let reason = parsed["reason"]
+                                .as_str()
+                                .or_else(|| parsed["conflict"].as_str())
+                                .or_else(|| parsed["message"].as_str())
+                                .unwrap_or("rejected")
+                                .to_string();
+                            RelayEvent::TransferRejected { target_id, offer_id, reason }
                         }
                         "chat_message" => {
                             let Ok(source_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
@@ -264,11 +297,15 @@ impl RelayClient {
     pub fn send_transfer_request(
         &self,
         target_id: uuid::Uuid,
+        offer_id: &str,
+        expires_at: &str,
         files: &[FileMeta],
     ) -> Result<(), String> {
         let payload = serde_json::json!({
             "type": "transfer_request",
             "target_id": target_id,
+            "offer_id": offer_id,
+            "expires_at": expires_at,
             "files": files,
         });
         self.write_tx
@@ -279,16 +316,23 @@ impl RelayClient {
     pub fn send_transfer_response(
         &self,
         target_id: uuid::Uuid,
+        offer_id: &str,
         accepted: bool,
-        conflict: Option<&str>,
+        files: &[FileMeta],
+        reason: Option<&str>,
     ) -> Result<(), String> {
         let mut payload = serde_json::json!({
             "type": if accepted { "transfer_accept" } else { "transfer_reject" },
             "target_id": target_id,
+            "offer_id": offer_id,
             "accepted": accepted,
         });
-        if let Some(c) = conflict {
-            payload["conflict"] = serde_json::json!(c);
+        if accepted {
+            payload["files"] = serde_json::json!(files);
+            payload["file_ids"] = serde_json::json!(files.iter().map(|f| f.id).collect::<Vec<_>>());
+        }
+        if let Some(reason) = reason {
+            payload["reason"] = serde_json::json!(reason);
         }
         self.write_tx
             .send(payload.to_string())
@@ -392,6 +436,27 @@ impl RelayClient {
             .send(payload)
             .map_err(|_| "relay disconnected".to_string())
     }
+}
+
+fn parse_file_ids(parsed: &serde_json::Value) -> Vec<uuid::Uuid> {
+    if let Some(files) = parsed["files"].as_array() {
+        return files
+            .iter()
+            .filter_map(|file| {
+                file["id"]
+                    .as_str()
+                    .or_else(|| file["file_id"].as_str())
+                    .and_then(|id| uuid::Uuid::parse_str(id).ok())
+            })
+            .collect();
+    }
+
+    parsed["file_ids"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|id| id.as_str().and_then(|id| uuid::Uuid::parse_str(id).ok()))
+        .collect()
 }
 
 fn extract_relay_file_id(raw: &[u8]) -> Option<uuid::Uuid> {

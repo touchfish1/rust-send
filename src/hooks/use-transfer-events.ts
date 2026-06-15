@@ -7,15 +7,18 @@ import type {
   IncomingTransfer,
 } from "@/types"
 
+const DEFAULT_OFFER_TTL_MS = 2 * 60 * 60 * 1000
+
 export function useTransferEvents() {
   const updateProgress = useTransferStore((s) => s.updateProgress)
   const completeTransfer = useTransferStore((s) => s.completeTransfer)
   const failTransfer = useTransferStore((s) => s.failTransfer)
-  const setIncoming = useTransferStore((s) => s.setIncoming)
   const cancelTransfer = useTransferStore((s) => s.cancelTransfer)
   const addMessage = useChatStore((s) => s.addMessage)
   const updateFileProgress = useChatStore((s) => s.updateFileProgress)
   const markFileStatus = useChatStore((s) => s.markFileStatus)
+  const updateFileSavedPath = useChatStore((s) => s.updateFileSavedPath)
+  const markOfferStatus = useChatStore((s) => s.markOfferStatus)
 
   const onProgress = useCallback(
     (p: TransferProgress | Record<string, unknown>) => {
@@ -31,12 +34,17 @@ export function useTransferEvents() {
   )
 
   const onComplete = useCallback(
-    (p: { file_id?: string; fileId?: string }) => {
+    (p: { file_id?: string; fileId?: string; saved_path?: string; savedPath?: string }) => {
       const fileId = String(p.fileId || p.file_id || "")
+      if (!fileId) return
+      const savedPath = String(p.savedPath || p.saved_path || "")
       completeTransfer(fileId)
       markFileStatus(fileId, "completed")
+      if (savedPath) {
+        updateFileSavedPath(fileId, savedPath)
+      }
     },
-    [completeTransfer, markFileStatus]
+    [completeTransfer, markFileStatus, updateFileSavedPath]
   )
 
   const onBatchComplete = useCallback(
@@ -57,24 +65,39 @@ export function useTransferEvents() {
 
   const onIncoming = useCallback(
     (req: IncomingTransfer) => {
-      setIncoming(req)
+      const offerId = req.offerId || `incoming-files-${req.sourceId}-${req.files.map((file) => file.id).join("-")}`
+      const expiresAt = req.expiresAt || new Date(Date.now() + DEFAULT_OFFER_TTL_MS).toISOString()
+      const isExpired = Date.now() >= Date.parse(expiresAt)
       addMessage({
-        id: `incoming-files-${req.sourceId}-${req.files.map((file) => file.id).join("-")}`,
+        id: offerId,
         peerId: req.sourceId,
         peerName: req.sourceName,
         direction: "incoming",
         kind: "files",
+        offerId,
+        expiresAt,
         files: req.files.map((file) => ({
           ...file,
+          offerId,
+          expiresAt,
           bytesSent: 0,
           bytesTotal: file.size,
-          status: "pending",
+          status: isExpired ? "expired" : "available",
         })),
         createdAt: new Date().toISOString(),
-        status: "pending",
+        status: isExpired ? "expired" : "available",
       })
     },
-    [addMessage, setIncoming]
+    [addMessage]
+  )
+
+  const onOfferFailed = useCallback(
+    (p: { offerId?: string; offer_id?: string; reason?: string }) => {
+      const offerId = String(p.offerId || p.offer_id || "")
+      const reason = String(p.reason || "")
+      markOfferStatus(offerId, reason === "expired" ? "expired" : "failed")
+    },
+    [markOfferStatus]
   )
 
   const onPaused = useCallback(
@@ -108,6 +131,7 @@ export function useTransferEvents() {
   useTauriEvent("transfer:batch_complete", onBatchComplete)
   useTauriEvent("transfer:failed", onFailed)
   useTauriEvent("transfer:incoming", onIncoming)
+  useTauriEvent("transfer:offer_failed", onOfferFailed)
   useTauriEvent("transfer:paused", onPaused)
   useTauriEvent("transfer:resumed", onResumed)
   useTauriEvent("transfer:cancelled", onCancelled)

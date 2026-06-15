@@ -110,6 +110,7 @@ pub async fn run_file_receive(
                                         transfer_id,
                                         file_id,
                                         file_name: meta.name.clone(),
+                                        saved_path: Some(save_path.to_string_lossy().to_string()),
                                     })
                                     .await
                                     .ok();

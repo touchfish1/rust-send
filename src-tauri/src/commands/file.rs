@@ -1,5 +1,7 @@
 use crate::AppError;
 use crate::core::file::FileMeta;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[tauri::command]
 pub async fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
@@ -73,4 +75,49 @@ pub fn get_downloads_dir(state: tauri::State<crate::AppState>) -> String {
         .download_dir
         .to_string_lossy()
         .to_string()
+}
+
+#[tauri::command]
+pub fn reveal_file(path: String) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        return Err(format!("file does not exist: {}", path.display()));
+    }
+
+    reveal_path(&path)
+}
+
+#[cfg(target_os = "windows")]
+fn reveal_path(path: &Path) -> Result<(), String> {
+    Command::new("explorer.exe")
+        .arg(format!("/select,\"{}\"", path.display()))
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn reveal_path(path: &Path) -> Result<(), String> {
+    Command::new("open")
+        .arg("-R")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn reveal_path(path: &Path) -> Result<(), String> {
+    let dir = if path.is_dir() {
+        path
+    } else {
+        path.parent()
+            .ok_or_else(|| format!("file has no parent folder: {}", path.display()))?
+    };
+
+    Command::new("xdg-open")
+        .arg(dir)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }

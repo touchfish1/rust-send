@@ -11,7 +11,10 @@ interface ChatState {
     progress: { bytesSent: number; bytesTotal: number; speed?: number }
   ) => void
   markFileStatus: (fileId: string, status: ChatMessageStatus) => void
+  updateFileSavedPath: (fileId: string, savedPath: string) => void
   markFilesForPeer: (peerId: string, fileIds: string[], status: ChatMessageStatus) => void
+  markOfferStatus: (offerId: string, status: ChatMessageStatus) => void
+  clearFileMessages: () => void
   clearPeer: (peerId: string) => void
 }
 
@@ -40,13 +43,13 @@ export const useChatStore = create<ChatState>()(
             if (!message.files?.some((file) => file.id === fileId)) return message
             return {
               ...message,
-              status: "sending",
+              status: message.direction === "incoming" ? "downloading" : "sending",
               files: updateFiles(message.files, fileId, {
                 ...progress,
                 status:
                   progress.bytesTotal > 0 && progress.bytesSent >= progress.bytesTotal
                     ? "completed"
-                    : "sending",
+                    : message.direction === "incoming" ? "downloading" : "sending",
               }),
             }
           }),
@@ -61,7 +64,24 @@ export const useChatStore = create<ChatState>()(
             const allDone = files.every((file) =>
               ["completed", "received", "sent"].includes(file.status || "")
             )
-            return { ...message, files, status: allDone ? status : message.status }
+            const allExpired = files.every((file) => file.status === "expired")
+            return {
+              ...message,
+              files,
+              status: allExpired ? "expired" : allDone ? status : message.status,
+            }
+          }),
+        })
+      },
+
+      updateFileSavedPath: (fileId, savedPath) => {
+        set({
+          messages: get().messages.map((message) => {
+            if (!message.files?.some((file) => file.id === fileId)) return message
+            return {
+              ...message,
+              files: updateFiles(message.files, fileId, { savedPath }),
+            }
           }),
         })
       },
@@ -84,8 +104,31 @@ export const useChatStore = create<ChatState>()(
         })
       },
 
+      markOfferStatus: (offerId, status) => {
+        set({
+          messages: get().messages.map((message) => {
+            if (message.offerId !== offerId && !message.files?.some((file) => file.offerId === offerId)) {
+              return message
+            }
+            return {
+              ...message,
+              status,
+              files: message.files?.map((file) =>
+                file.offerId === offerId || message.offerId === offerId
+                  ? { ...file, status }
+                  : file
+              ),
+            }
+          }),
+        })
+      },
+
       clearPeer: (peerId) => {
         set({ messages: get().messages.filter((message) => message.peerId !== peerId) })
+      },
+
+      clearFileMessages: () => {
+        set({ messages: get().messages.filter((message) => message.kind !== "files") })
       },
     }),
     { name: "rust-send-chat" }

@@ -37,6 +37,7 @@ pub async fn connect_relay(
     let data_channels = state.receiver_data_channels.clone();
     let engine = state.engine.clone();
     let pending_outgoing = state.pending_outgoing.clone();
+    let relay_client = state.relay_client.clone();
     let local_id = device_id;
     tauri::async_runtime::spawn(async move {
         process_relay_events_internal(
@@ -44,6 +45,7 @@ pub async fn connect_relay(
             data_channels,
             engine,
             pending_outgoing,
+            relay_client,
             app,
             local_id,
         )
@@ -83,7 +85,8 @@ pub async fn process_relay_events_internal(
     mut event_rx: tokio::sync::mpsc::Receiver<RelayEvent>,
     data_channels: Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, tokio::sync::mpsc::Sender<Bytes>>>>,
     engine: Arc<tokio::sync::Mutex<crate::transfer::engine::TransferEngine>>,
-    pending_outgoing: Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, crate::PendingOutgoingTransfer>>>,
+    pending_outgoing: Arc<tokio::sync::Mutex<std::collections::HashMap<String, crate::PendingOutgoingTransfer>>>,
+    relay_client: Arc<tokio::sync::Mutex<Option<Arc<RelayClient>>>>,
     app_handle: tauri::AppHandle,
     local_device_id: uuid::Uuid,
 ) {
@@ -104,10 +107,12 @@ pub async fn process_relay_events_internal(
                     let _ = app_handle.emit("device:discovered", &device);
                 }
             }
-            RelayEvent::TransferRequest { source_id, source_name, files } => {
+            RelayEvent::TransferRequest { source_id, source_name, offer_id, expires_at, files } => {
                 let incoming = serde_json::json!({
                     "sourceId": source_id,
                     "sourceName": source_name,
+                    "offerId": offer_id,
+                    "expiresAt": expires_at,
                     "files": files.iter().map(|f| serde_json::json!({
                         "id": f.id,
                         "name": f.name,
@@ -117,8 +122,74 @@ pub async fn process_relay_events_internal(
                 });
                 let _ = app_handle.emit("transfer:incoming", incoming);
             }
-            RelayEvent::TransferAccepted { target_id } => {
-                if let Some(pending) = pending_outgoing.lock().await.remove(&target_id) {
+            RelayEvent::TransferAccepted { target_id, offer_id, file_ids } => {
+                let pending = {
+                    let mut pending_map = pending_outgoing.lock().await;
+                    if let Some(pending) = pending_map.get(&offer_id).cloned() {
+                        if chrono::Utc::now() >= pending.expires_at {
+                            pending_map.remove(&offer_id);
+                            let _ = pending.client.send_transfer_response(
+                                target_id,
+                                &offer_id,
+                                false,
+                                &[],
+                                Some("expired"),
+                            );
+                            None
+                        } else if pending.target_id != target_id {
+                            let _ = pending.client.send_transfer_response(
+                                target_id,
+                                &offer_id,
+                                false,
+                                &[],
+                                Some("unavailable"),
+                            );
+                            None
+                        } else {
+                            Some(pending)
+                        }
+                    } else {
+                        if let Some(client) = relay_client.lock().await.as_ref() {
+                            let _ = client.send_transfer_response(
+                                target_id,
+                                &offer_id,
+                                false,
+                                &[],
+                                Some("unavailable"),
+                            );
+                        }
+                        None
+                    }
+                };
+
+                if let Some(pending) = pending {
+                    let requested = if file_ids.is_empty() {
+                        pending.files.iter().map(|file| file.id).collect::<std::collections::HashSet<_>>()
+                    } else {
+                        file_ids.into_iter().collect::<std::collections::HashSet<_>>()
+                    };
+                    let mut files = Vec::new();
+                    let mut paths = Vec::new();
+                    for (index, file) in pending.files.iter().enumerate() {
+                        if requested.contains(&file.id) {
+                            files.push(file.clone());
+                            if let Some(path) = pending.paths.get(index) {
+                                paths.push(path.clone());
+                            }
+                        }
+                    }
+
+                    if files.is_empty() || files.len() != paths.len() {
+                        let _ = pending.client.send_transfer_response(
+                            target_id,
+                            &offer_id,
+                            false,
+                            &[],
+                            Some("unavailable"),
+                        );
+                        continue;
+                    }
+
                     let peer = PeerHandle::Relay {
                         client: pending.client,
                         peer_id: target_id,
@@ -126,17 +197,16 @@ pub async fn process_relay_events_internal(
                     engine.lock().await.start_send(
                         peer,
                         pending.target_name,
-                        pending.files,
-                        pending.paths,
+                        files,
+                        paths,
                     );
                 }
             }
-            RelayEvent::TransferRejected { target_id } => {
-                pending_outgoing.lock().await.remove(&target_id);
-                let _ = app_handle.emit("transfer:failed", serde_json::json!({
-                    "transfer_id": target_id,
-                    "file_id": target_id,
-                    "error": "transfer rejected",
+            RelayEvent::TransferRejected { target_id, offer_id, reason } => {
+                let _ = app_handle.emit("transfer:offer_failed", serde_json::json!({
+                    "peerId": target_id,
+                    "offerId": offer_id,
+                    "reason": reason,
                 }));
             }
             RelayEvent::ChatMessage {

@@ -155,6 +155,7 @@ pub async fn run_file_send(
             transfer_id,
             file_id,
             file_name: meta.name.clone(),
+            saved_path: None,
         })
         .await
         .ok();

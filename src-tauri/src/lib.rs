@@ -26,17 +26,20 @@ pub struct AppState {
     pub history: std::sync::Mutex<TransferHistory>,
     pub engine: Arc<tokio::sync::Mutex<TransferEngine>>,
     pub relay_client: Arc<tokio::sync::Mutex<Option<Arc<RelayClient>>>>,
-    pub pending_outgoing: Arc<tokio::sync::Mutex<HashMap<uuid::Uuid, PendingOutgoingTransfer>>>,
+    pub pending_outgoing: Arc<tokio::sync::Mutex<HashMap<String, PendingOutgoingTransfer>>>,
     /// file_id → data sender channel for routing incoming relay data to receivers
     pub receiver_data_channels: Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>>,
 }
 
 #[derive(Clone)]
 pub struct PendingOutgoingTransfer {
+    pub offer_id: String,
+    pub target_id: uuid::Uuid,
     pub target_name: String,
     pub files: Vec<FileMeta>,
     pub paths: Vec<String>,
     pub client: Arc<RelayClient>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -107,9 +110,12 @@ pub fn run() {
                                 "bytes_total": bytes_total, "speed": speed,
                             })).ok();
                         }
-                        ProgressEvent::Complete { transfer_id, file_id, file_name } => {
+                        ProgressEvent::Complete { transfer_id, file_id, file_name, saved_path } => {
                             handle.emit("transfer:complete", json!({
-                                "transfer_id": transfer_id, "file_id": file_id, "file_name": file_name,
+                                "transfer_id": transfer_id,
+                                "file_id": file_id,
+                                "file_name": file_name,
+                                "saved_path": saved_path,
                             })).ok();
                         }
                         ProgressEvent::BatchComplete { transfer_id } => {
@@ -147,6 +153,7 @@ pub fn run() {
             commands::file::pick_directory,
             commands::file::get_file_meta,
             commands::file::get_downloads_dir,
+            commands::file::reveal_file,
             commands::network::connect_relay,
             commands::network::disconnect_relay,
             commands::network::send_chat_message,

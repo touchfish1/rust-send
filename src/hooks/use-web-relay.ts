@@ -1,27 +1,34 @@
 import { useEffect, useRef, useCallback } from "react"
 import { useDeviceStore } from "@/stores/device-store"
 import { useSettingsStore } from "@/stores/settings-store"
-import { useTransferStore } from "@/stores/transfer-store"
 import { useChatStore } from "@/stores/chat-store"
 import { isTauri } from "./use-tauri-event"
 import type { IncomingTransfer } from "@/types"
 
 type PendingWebFile = { id: string; file: File; name: string; size: number; mimeType: string }
+type PendingWebOffer = {
+  offerId: string
+  targetId: string
+  expiresAt: string
+  files: PendingWebFile[]
+}
 type ReceiveState = {
   meta: IncomingTransfer["files"][number]
   chunks: Uint8Array[]
   received: number
 }
 
+const DEFAULT_OFFER_TTL_MS = 2 * 60 * 60 * 1000
+
 export function useWebRelay() {
   const relayUrl = useSettingsStore((s) => s.relayUrl)
   const setDevices = useDeviceStore((s) => s.setDevices)
   const setStatus = useDeviceStore((s) => s.setStatus)
   const localName = useDeviceStore((s) => s.localName)
-  const setIncoming = useTransferStore((s) => s.setIncoming)
   const addMessage = useChatStore((s) => s.addMessage)
   const updateFileProgress = useChatStore((s) => s.updateFileProgress)
   const markFileStatus = useChatStore((s) => s.markFileStatus)
+  const markOfferStatus = useChatStore((s) => s.markOfferStatus)
   const wsRef = useRef<WebSocket | null>(null)
   const deviceIdRef = useRef<string>("")
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -29,7 +36,7 @@ export function useWebRelay() {
   const shouldReconnectRef = useRef(true)
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const retryCountRef = useRef(0)
-  const pendingSendsRef = useRef(new Map<string, PendingWebFile[]>())
+  const pendingSendsRef = useRef(new Map<string, PendingWebOffer>())
   const receivingRef = useRef(new Map<string, ReceiveState>())
 
   const getDeviceId = () => {
@@ -95,9 +102,18 @@ export function useWebRelay() {
           console.log("[relay] device_list received:", devices.length, "devices")
           setDevices(devices)
         } else if (msg.type === "transfer_request" && Array.isArray(msg.files)) {
+          const offerId = String(msg.offer_id || msg.offerId || crypto.randomUUID())
+          const expiresAt = String(
+            msg.expires_at ||
+              msg.expiresAt ||
+              new Date(Date.now() + DEFAULT_OFFER_TTL_MS).toISOString()
+          )
+          const isExpired = Date.now() >= Date.parse(expiresAt)
           const incoming: IncomingTransfer = {
             sourceId: String(msg.source_id || ""),
             sourceName: String(msg.source_name || "Unknown"),
+            offerId,
+            expiresAt,
             files: msg.files.map((f: Record<string, unknown>) => ({
               id: String(f.id || ""),
               name: String(f.name || "file"),
@@ -105,31 +121,50 @@ export function useWebRelay() {
               mimeType: String(f.mime_type || f.mimeType || "application/octet-stream"),
             })),
           }
-          setIncoming(incoming)
           addMessage({
-            id: `incoming-files-${incoming.sourceId}-${incoming.files.map((file) => file.id).join("-")}`,
+            id: offerId,
             peerId: incoming.sourceId,
             peerName: incoming.sourceName,
             direction: "incoming",
             kind: "files",
+            offerId,
+            expiresAt,
             files: incoming.files.map((file) => ({
               ...file,
+              offerId,
+              expiresAt,
               bytesSent: 0,
               bytesTotal: file.size,
-              status: "pending",
+              status: isExpired ? "expired" : "available",
             })),
             createdAt: new Date().toISOString(),
-            status: "pending",
+            status: isExpired ? "expired" : "available",
           })
         } else if (msg.type === "transfer_accept") {
           const targetId = String(msg.source_id || "")
-          const files = pendingSendsRef.current.get(targetId)
-          if (files) {
-            pendingSendsRef.current.delete(targetId)
-            sendPendingFiles(ws, targetId, files).catch((err) => console.error("[relay] web send failed:", err))
+          const offerId = String(msg.offer_id || msg.offerId || "")
+          const offer = pendingSendsRef.current.get(offerId)
+          if (!offer || offer.targetId !== targetId) {
+            sendTransferReject(ws, targetId, offerId, "unavailable")
+          } else if (Date.now() >= Date.parse(offer.expiresAt)) {
+            pendingSendsRef.current.delete(offerId)
+            markOfferStatus(offerId, "expired")
+            sendTransferReject(ws, targetId, offerId, "expired")
+          } else {
+            const requestedIds = parseAcceptedFileIds(msg)
+            const selected = requestedIds.size
+              ? offer.files.filter((file) => requestedIds.has(file.id))
+              : offer.files
+            if (selected.length === 0) {
+              sendTransferReject(ws, targetId, offerId, "unavailable")
+            } else {
+              sendPendingFiles(ws, targetId, selected).catch((err) => console.error("[relay] web send failed:", err))
+            }
           }
         } else if (msg.type === "transfer_reject") {
-          pendingSendsRef.current.delete(String(msg.source_id || ""))
+          const offerId = String(msg.offer_id || msg.offerId || "")
+          const reason = String(msg.reason || msg.conflict || "rejected")
+          markOfferStatus(offerId, reason === "expired" ? "expired" : "failed")
         } else if (msg.type === "relay_data") {
           handleRelayData(String(msg.source_id || ""), String(msg.data || ""))
         } else if (msg.type === "chat_message") {
@@ -169,7 +204,7 @@ export function useWebRelay() {
         ws.send(JSON.stringify({ type: "ping" }))
       }
     }, 15000)
-  }, [addMessage, localName, setDevices, setIncoming, setStatus])
+  }, [addMessage, localName, markOfferStatus, setDevices, setStatus])
 
   const handleRelayData = useCallback((sourceId: string, dataBase64: string) => {
     const raw = base64ToBytes(dataBase64)
@@ -252,41 +287,41 @@ export function useWebRelay() {
 
     ;(window as any).__RUST_SEND_WEB_RELAY__ = {
       acceptTransfer: (req: IncomingTransfer) => {
-        for (const file of req.files) {
-          receivingRef.current.set(file.id, {
-            meta: file,
-            chunks: [],
-            received: 0,
-          })
-        }
-        sendJson(wsRef.current, {
-          type: "transfer_accept",
-          target_id: req.sourceId,
-          accepted: true,
-        })
+        requestDownload(req)
       },
-      rejectTransfer: (sourceId: string) => {
-        sendJson(wsRef.current, {
-          type: "transfer_reject",
-          target_id: sourceId,
-          accepted: false,
-        })
+      requestDownload: (req: IncomingTransfer, files = req.files) => {
+        requestDownload({ ...req, files })
       },
-      sendFiles: (targetId: string, files: Array<File | { id: string; file: File }>) => {
+      rejectTransfer: (sourceId: string, offerId = "") => {
+        sendTransferReject(wsRef.current, sourceId, offerId, "rejected")
+      },
+      sendFiles: (
+        targetId: string,
+        files: Array<File | { id: string; file: File }>,
+        offerId = crypto.randomUUID(),
+        expiresAt = new Date(Date.now() + DEFAULT_OFFER_TTL_MS).toISOString()
+      ) => {
         const pending = files.map((entry) => {
           const file = entry instanceof File ? entry : entry.file
           return {
-          id: entry instanceof File ? crypto.randomUUID() : entry.id,
-          file,
-          name: file.name,
-          size: file.size,
-          mimeType: file.type || "application/octet-stream",
-        }
+            id: entry instanceof File ? crypto.randomUUID() : entry.id,
+            file,
+            name: file.name,
+            size: file.size,
+            mimeType: file.type || "application/octet-stream",
+          }
         })
-        pendingSendsRef.current.set(targetId, pending)
+        pendingSendsRef.current.set(offerId, {
+          offerId,
+          targetId,
+          expiresAt,
+          files: pending,
+        })
         sendJson(wsRef.current, {
           type: "transfer_request",
           target_id: targetId,
+          offer_id: offerId,
+          expires_at: expiresAt,
           files: pending.map((f) => ({
             id: f.id,
             name: f.name,
@@ -306,6 +341,33 @@ export function useWebRelay() {
       },
     }
 
+    function requestDownload(req: IncomingTransfer) {
+      if (req.expiresAt && Date.now() >= Date.parse(req.expiresAt)) {
+        markOfferStatus(req.offerId || "", "expired")
+        return
+      }
+
+      for (const file of req.files) {
+        receivingRef.current.set(file.id, {
+          meta: file,
+          chunks: [],
+          received: 0,
+        })
+      }
+      sendJson(wsRef.current, {
+        type: "transfer_accept",
+        target_id: req.sourceId,
+        offer_id: req.offerId || "",
+        files: req.files.map((file) => ({
+          id: file.id,
+          name: file.name,
+          size: file.size,
+          mime_type: file.mimeType,
+        })),
+        accepted: true,
+      })
+    }
+
     if (relayUrl) {
       shouldReconnectRef.current = true
       retryCountRef.current = 0
@@ -315,7 +377,7 @@ export function useWebRelay() {
       delete (window as any).__RUST_SEND_WEB_RELAY__
       disconnect()
     }
-  }, [relayUrl, connect, disconnect])
+  }, [relayUrl, connect, disconnect, markOfferStatus])
 
   return { connect, disconnect }
 }
@@ -324,6 +386,27 @@ function sendJson(ws: WebSocket | null, payload: unknown) {
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(payload))
   }
+}
+
+function sendTransferReject(ws: WebSocket | null, targetId: string, offerId: string, reason: string) {
+  sendJson(ws, {
+    type: "transfer_reject",
+    target_id: targetId,
+    offer_id: offerId,
+    accepted: false,
+    reason,
+  })
+}
+
+function parseAcceptedFileIds(msg: Record<string, unknown>) {
+  const files = Array.isArray(msg.files) ? msg.files : []
+  const ids = files
+    .map((file) => String((file as Record<string, unknown>).id || ""))
+    .filter(Boolean)
+  if (ids.length > 0) return new Set(ids)
+
+  const fileIds = Array.isArray(msg.file_ids) ? msg.file_ids : []
+  return new Set(fileIds.map((id) => String(id || "")).filter(Boolean))
 }
 
 async function sendPendingFiles(ws: WebSocket, targetId: string, files: PendingWebFile[]) {
