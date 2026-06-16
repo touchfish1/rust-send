@@ -6,9 +6,9 @@ type AppMarkProps = {
 }
 
 const sizeStyles = {
-  sm: "h-5 w-5 rounded-[4px]",
-  md: "h-10 w-10 rounded-[8px]",
-  lg: "h-20 w-20 rounded-[16px]",
+  sm: "h-5 w-5 rounded-[6px]",
+  md: "h-10 w-10 rounded-[13px]",
+  lg: "h-20 w-20 rounded-[26px]",
 }
 
 const iconSizes = {

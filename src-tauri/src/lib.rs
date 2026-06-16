@@ -69,6 +69,14 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    // macOS 开发态偶尔不会把 bundle 图标正确挂到窗口进程上，
+                    // 这里显式设置一次，尽量避免 Dock 里退化成纯色块。
+                    let _ = window.set_icon(icon);
+                }
+            }
+
             // mDNS 局域网发现（Tauri 桌面端）
             let app_state = app.state::<AppState>().inner();
             let device_id = app_state.config.lock().ok().map(|c| c.device_id).unwrap_or_else(uuid::Uuid::new_v4);
@@ -149,6 +157,7 @@ pub fn run() {
             commands::device::get_device_name,
             commands::device::set_device_name,
             commands::device::get_device_info,
+            commands::device::get_local_ip_addresses,
             commands::file::pick_files,
             commands::file::pick_directory,
             commands::file::get_file_meta,

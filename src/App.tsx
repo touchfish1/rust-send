@@ -14,7 +14,9 @@ import { useChatEvents } from "@/hooks/use-chat-events"
 import { useLocalDeviceInfo } from "@/hooks/use-local-device-info"
 import { isTauri } from "@/hooks/use-tauri-event"
 import { useChatStore } from "@/stores/chat-store"
-import { useCallback } from "react"
+import { useCallback, useEffect } from "react"
+import { useSettingsStore } from "@/stores/settings-store"
+import { extractRelayUrlFromLocation } from "@/lib/pairing"
 
 export default function App() {
   const navigate = useNavigate()
@@ -24,12 +26,23 @@ export default function App() {
   const connectionStatus = useDeviceStore((s) => s.status)
   const incoming = useTransferStore((s) => s.incoming)
   const setIncoming = useTransferStore((s) => s.setIncoming)
+  const setRelayUrl = useSettingsStore((s) => s.setRelayUrl)
 
   useDeviceEvents()
   useTransferEvents()
   useChatEvents()
   useLocalDeviceInfo()
   useAutoConnect()
+
+  useEffect(() => {
+    if (isTauri() || typeof window === "undefined") return
+
+    // Web 端通过扫码进入时，会把桌面端的 relay 参数带过来，这里落回本地设置即可自动重连。
+    const relayUrl = extractRelayUrlFromLocation(window.location.href)
+    if (relayUrl) {
+      setRelayUrl(relayUrl)
+    }
+  }, [setRelayUrl])
 
   const path = location.pathname
   const currentPage = path === "/" ? "welcome" : path.split("/")[1]
