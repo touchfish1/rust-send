@@ -1,4 +1,5 @@
 import { Minus, Square, X } from "lucide-react"
+import { AppMark } from "@/components/branding/app-mark"
 
 interface TitleBarProps {
   title?: string
@@ -30,21 +31,16 @@ export function TitleBar({ title, onMinimize, onMaximize, onClose, isTauri }: Ti
   }
 
   return (
-    <div className="flex h-10 items-center border-b border-border/30 bg-muted/20 select-none">
+    <div className="flex h-10 items-center border-b border-border/30 bg-muted/20 select-none backdrop-blur-sm">
       <div
         className="flex h-full min-w-0 flex-1 items-center justify-between px-3"
         data-tauri-drag-region
       >
         {/* 左侧：Logo */}
-        <div className="flex items-center gap-2" data-tauri-drag-region>
+        <div className="group flex items-center gap-2 transition-all duration-300" data-tauri-drag-region>
+          <AppMark size="sm" className="transition-transform duration-300 group-hover:-translate-y-0.5" />
           <span
-            className="flex h-5 w-5 items-center justify-center rounded-[3px] bg-primary text-[10px] text-primary-foreground font-serif leading-none"
-            data-tauri-drag-region
-          >
-            送
-          </span>
-          <span
-            className="text-xs font-medium text-foreground/60 tracking-wider"
+            className="text-xs font-medium text-foreground/60 tracking-[0.24em] transition-colors duration-300 group-hover:text-foreground/80"
             data-tauri-drag-region
           >
             rust-send
@@ -53,7 +49,7 @@ export function TitleBar({ title, onMinimize, onMaximize, onClose, isTauri }: Ti
 
         {/* 中间：当前页面标题 */}
         {title && (
-          <span className="truncate text-xs text-foreground/40" data-tauri-drag-region>
+          <span className="truncate text-xs text-foreground/40 animate-ink-fade" data-tauri-drag-region>
             {title}
           </span>
         )}
@@ -66,7 +62,7 @@ export function TitleBar({ title, onMinimize, onMaximize, onClose, isTauri }: Ti
           onClick={handleMinimize}
           aria-label="最小化"
           title="最小化"
-          className="flex h-8 w-10 items-center justify-center rounded-sm text-foreground/45 transition-colors hover:bg-muted hover:text-foreground/75 active:bg-muted/80"
+          className="flex h-8 w-10 items-center justify-center rounded-sm text-foreground/45 transition-[transform,color,background-color] duration-200 hover:-translate-y-0.5 hover:bg-muted hover:text-foreground/75 active:translate-y-0 active:bg-muted/80"
         >
           <Minus className="h-4 w-4" strokeWidth={1.75} />
         </button>
@@ -75,7 +71,7 @@ export function TitleBar({ title, onMinimize, onMaximize, onClose, isTauri }: Ti
           onClick={handleMaximize}
           aria-label="最大化"
           title="最大化"
-          className="flex h-8 w-10 items-center justify-center rounded-sm text-foreground/45 transition-colors hover:bg-muted hover:text-foreground/75 active:bg-muted/80"
+          className="flex h-8 w-10 items-center justify-center rounded-sm text-foreground/45 transition-[transform,color,background-color] duration-200 hover:-translate-y-0.5 hover:bg-muted hover:text-foreground/75 active:translate-y-0 active:bg-muted/80"
         >
           <Square className="h-3.5 w-3.5" strokeWidth={1.75} />
         </button>
@@ -84,7 +80,7 @@ export function TitleBar({ title, onMinimize, onMaximize, onClose, isTauri }: Ti
           onClick={handleClose}
           aria-label="关闭"
           title="关闭"
-          className="flex h-8 w-10 items-center justify-center rounded-sm text-foreground/45 transition-colors hover:bg-destructive hover:text-destructive-foreground active:bg-destructive/90"
+          className="flex h-8 w-10 items-center justify-center rounded-sm text-foreground/45 transition-[transform,color,background-color] duration-200 hover:-translate-y-0.5 hover:bg-destructive hover:text-destructive-foreground active:translate-y-0 active:bg-destructive/90"
         >
           <X className="h-4 w-4" strokeWidth={1.75} />
         </button>

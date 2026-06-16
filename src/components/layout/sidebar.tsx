@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils"
 import type { DeviceInfo } from "@/types"
+import type { CSSProperties } from "react"
 
 interface SidebarProps {
   localName: string
@@ -20,7 +21,8 @@ const statusDot = {
 function DeviceStatusDot({ status }: { status: "lan" | "relay" | "offline" }) {
   return (
     <span className={cn(
-      "inline-block h-2 w-2 rounded-full",
+      "inline-block h-2 w-2 rounded-full transition-transform duration-300",
+      status !== "offline" && "animate-status-pulse",
       statusDot[status]
     )} />
   )
@@ -44,10 +46,10 @@ export function Sidebar({
   currentPage,
 }: SidebarProps) {
   return (
-    <aside className="flex w-72 flex-col border-r border-border/50 bg-muted/30">
+    <aside className="flex w-72 flex-col border-r border-border/50 bg-muted/30 backdrop-blur-sm animate-ink-slide">
       {/* 设备信息 */}
-      <div className="flex items-center gap-3 border-b border-border/30 px-5 py-4">
-        <span className="flex h-10 w-10 items-center justify-center rounded-sm bg-primary text-sm text-primary-foreground font-medium">
+      <div className="flex items-center gap-3 border-b border-border/30 px-5 py-4 motion-stagger [--stagger-delay:40ms]">
+        <span className="flex h-10 w-10 items-center justify-center rounded-sm bg-primary text-sm font-medium text-primary-foreground shadow-[0_10px_30px_-18px_hsl(var(--primary)/0.95)] transition-transform duration-300 hover:-translate-y-0.5">
           {localName.charAt(0).toUpperCase()}
         </span>
         <div className="flex flex-col min-w-0">
@@ -74,18 +76,25 @@ export function Sidebar({
             <div className="mt-1">确保在同一网络或连接中继</div>
           </div>
         ) : (
-          <div className="space-y-0.5 px-2">
-            {devices.map((device) => (
+          <div className="space-y-1 px-2">
+            {devices.map((device, index) => (
               <button
                 key={device.id}
                 onClick={() => onSelectDevice(device.id)}
+                style={{ "--stagger-delay": `${80 + index * 40}ms` } as CSSProperties}
                 className={cn(
-                  "group flex w-full items-center gap-3 rounded-sm px-3 py-2.5 text-left text-sm transition-all duration-150",
+                  "group motion-stagger relative flex w-full items-center gap-3 overflow-hidden rounded-md px-3 py-2.5 text-left text-sm outline-none transition-[transform,background-color,color,box-shadow] duration-300 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-0",
                   activeDeviceId === device.id
-                    ? "bg-accent/10 text-foreground"
+                    ? "bg-accent/10 text-foreground shadow-[0_12px_24px_-22px_hsl(var(--primary)/0.9)]"
                     : "text-foreground/70 hover:bg-muted/60 hover:text-foreground"
                 )}
               >
+                <span
+                  className={cn(
+                    "absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary/70 transition-all duration-300",
+                    activeDeviceId === device.id ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2"
+                  )}
+                />
                 <DeviceIcon type={device.deviceType} />
                 <div className="flex flex-col min-w-0 flex-1">
                   <span className="truncate font-medium">{device.name}</span>
@@ -115,7 +124,7 @@ export function Sidebar({
         <button
           onClick={() => onNavigate("transfers")}
           className={cn(
-            "flex w-full items-center gap-3 rounded-sm px-3 py-2.5 text-sm transition-all duration-150",
+            "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm outline-none transition-[transform,background-color,color,box-shadow] duration-200 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-0",
             currentPage === "transfers"
               ? "bg-accent/10 text-foreground font-medium"
               : "text-foreground/60 hover:bg-muted/60 hover:text-foreground"
@@ -129,7 +138,7 @@ export function Sidebar({
         <button
           onClick={() => onNavigate("settings")}
           className={cn(
-            "flex w-full items-center gap-3 rounded-sm px-3 py-2.5 text-sm transition-all duration-150",
+            "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm outline-none transition-[transform,background-color,color,box-shadow] duration-200 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-0",
             currentPage === "settings"
               ? "bg-accent/10 text-foreground font-medium"
               : "text-foreground/60 hover:bg-muted/60 hover:text-foreground"

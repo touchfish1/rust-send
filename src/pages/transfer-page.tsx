@@ -5,6 +5,7 @@ import { useChatStore } from "@/stores/chat-store"
 import { formatFileSize, formatSpeed, formatTime, getFileIcon } from "@/lib/utils"
 import { useCallback, useMemo } from "react"
 import type { ChatMessage, TransferRecord } from "@/types"
+import type { CSSProperties } from "react"
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -91,8 +92,8 @@ export function TransferPage() {
   }, [clearFileMessages, clearHistory])
 
   return (
-    <div className="flex h-full flex-col p-8 animate-ink-fade">
-      <div className="flex items-center justify-between">
+    <div className="flex h-full flex-col p-8 animate-page-rise">
+      <div className="flex items-center justify-between motion-stagger [--stagger-delay:40ms]">
         <h1 className="text-xl font-medium tracking-wide">传输列表</h1>
         {completedTransfers.length > 0 && (
           <Button variant="ghost" size="sm" roundness="sharp" className="text-xs text-muted-foreground/60 hover:text-foreground" onClick={handleClearHistory}>
@@ -108,12 +109,17 @@ export function TransferPage() {
             进行中 · {activeTransfers.length}
           </div>
           <div className="space-y-3">
-            {activeTransfers.map((t) => {
+            {activeTransfers.map((t, index) => {
               const f = t.files[0]
               const pct = f ? Math.round((f.bytesSent / Math.max(f.size, 1)) * 100) : 0
               const isActive = t.status === "transferring"
               return (
-                <div key={t.id} className="group flex items-start gap-4 rounded-md border border-border/40 bg-card px-5 py-4 shadow-ink-sm transition-all duration-150 hover:shadow-ink-md">
+                <div
+                  key={t.id}
+                  style={{ "--stagger-delay": `${100 + index * 55}ms` } as CSSProperties}
+                  className="group motion-stagger relative flex items-start gap-4 overflow-hidden rounded-md border border-border/40 bg-card px-5 py-4 shadow-ink-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-ink-md"
+                >
+                  {isActive && <div className="absolute inset-0 motion-shimmer opacity-60" />}
                   <div className="flex flex-col items-center gap-1 pt-0.5">
                     <span className="text-lg leading-none">{f ? getFileIcon(f.fileName) : "📎"}</span>
                     <span className="text-[10px] text-muted-foreground/50">
@@ -140,7 +146,7 @@ export function TransferPage() {
                     </div>
                     {isActive && (
                       <div className="mt-3">
-                        <Progress value={pct} variant={progressVariant(t.status)} size="sm" />
+                        <Progress value={pct} variant={progressVariant(t.status)} size="sm" active />
                         <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground/60">
                           <span>{pct}%</span>
                           {f && f.speed > 0 && (
@@ -204,8 +210,12 @@ export function TransferPage() {
             历史记录 · {completedTransfers.length}
           </div>
           <div className="space-y-2">
-            {completedTransfers.map((r) => (
-              <div key={r.id} className="group flex items-start gap-4 rounded-md border border-border/40 bg-card px-5 py-4 shadow-ink-sm transition-all duration-150 hover:shadow-ink-md">
+            {completedTransfers.map((r, index) => (
+              <div
+                key={r.id}
+                style={{ "--stagger-delay": `${120 + index * 40}ms` } as CSSProperties}
+                className="group motion-stagger flex items-start gap-4 rounded-md border border-border/40 bg-card px-5 py-4 shadow-ink-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-ink-md"
+              >
                 <div className="flex flex-col items-center gap-1 pt-0.5">
                   <span className="text-lg leading-none">{getFileIcon(r.fileNames[0] || "")}</span>
                   <span className="text-[10px] text-muted-foreground/50">

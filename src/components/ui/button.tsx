@@ -2,24 +2,24 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 select-none",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-[transform,background-color,color,box-shadow,opacity] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 select-none will-change-transform",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98]",
+          "bg-primary text-primary-foreground shadow-[0_10px_24px_-18px_hsl(var(--primary)/0.9)] hover:-translate-y-0.5 hover:bg-primary/90 active:translate-y-0 active:scale-[0.985]",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90 active:scale-[0.98]",
+          "bg-destructive text-destructive-foreground hover:-translate-y-0.5 hover:bg-destructive/90 active:translate-y-0 active:scale-[0.985]",
         outline:
-          "border border-border bg-transparent hover:bg-muted active:bg-muted/80",
+          "border border-border bg-transparent hover:-translate-y-0.5 hover:bg-muted active:translate-y-0 active:bg-muted/80",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 active:scale-[0.98]",
+          "bg-secondary text-secondary-foreground hover:-translate-y-0.5 hover:bg-secondary/80 active:translate-y-0 active:scale-[0.985]",
         ghost:
-          "hover:bg-muted active:bg-muted/80",
+          "hover:-translate-y-0.5 hover:bg-muted active:translate-y-0 active:bg-muted/80",
         link:
           "text-foreground underline-offset-4 hover:underline",
         "ink-ghost":
-          "relative text-foreground/60 hover:text-foreground after:absolute after:bottom-0 after:left-1/2 after:-translate-x-1/2 after:h-[1px] after:w-0 after:bg-foreground/20 after:transition-all after:duration-200 hover:after:w-3/4",
+          "relative text-foreground/60 hover:-translate-y-0.5 hover:text-foreground after:absolute after:bottom-0 after:left-1/2 after:-translate-x-1/2 after:h-[1px] after:w-0 after:bg-foreground/20 after:transition-all after:duration-200 hover:after:w-3/4",
       },
       size: {
         default: "h-9 px-4 py-2",

@@ -5,10 +5,11 @@ interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
   value?: number
   variant?: "default" | "success" | "warning" | "error"
   size?: "sm" | "md" | "lg"
+  active?: boolean
 }
 
 const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
-  ({ className, value = 0, variant = "default", size = "md", ...props }, ref) => {
+  ({ className, value = 0, variant = "default", size = "md", active = false, ...props }, ref) => {
     const clampedValue = Math.min(100, Math.max(0, value))
 
     const variantStyles = {
@@ -50,6 +51,14 @@ const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
               : "none",
           }}
         />
+        {active && clampedValue > 0 && clampedValue < 100 && (
+          <div
+            className="pointer-events-none absolute inset-y-0 left-0 w-1/3 -skew-x-12 rounded-full bg-white/25"
+            style={{
+              animation: "ink-shimmer 1.9s linear infinite",
+            }}
+          />
+        )}
         {/* 墨迹渐变尾端 */}
         {clampedValue < 100 && clampedValue > 0 && (
           <div

@@ -1,4 +1,4 @@
-import { Routes, Route, useNavigate } from "react-router-dom"
+import { Routes, Route, useLocation, useNavigate } from "react-router-dom"
 import { Sidebar } from "@/components/layout/sidebar"
 import { TitleBar } from "@/components/layout/title-bar"
 import { WelcomePage } from "@/pages/welcome-page"
@@ -18,6 +18,7 @@ import { useCallback } from "react"
 
 export default function App() {
   const navigate = useNavigate()
+  const location = useLocation()
   const devices = useDeviceStore((s) => s.devices)
   const localName = useDeviceStore((s) => s.localName)
   const connectionStatus = useDeviceStore((s) => s.status)
@@ -30,8 +31,9 @@ export default function App() {
   useLocalDeviceInfo()
   useAutoConnect()
 
-  const path = window.location.pathname
+  const path = location.pathname
   const currentPage = path === "/" ? "welcome" : path.split("/")[1]
+  const activeDeviceId = currentPage === "chat" ? path.split("/")[2] : undefined
 
   const handleSelectDevice = useCallback(
     (id: string) => navigate(`/chat/${id}`),
@@ -110,19 +112,24 @@ export default function App() {
           localName={localName || "rust-send"}
           connectionStatus={connectionStatus.state}
           devices={Array.from(devices.values())}
-          activeDeviceId={undefined}
+          activeDeviceId={activeDeviceId}
           onSelectDevice={handleSelectDevice}
           onNavigate={handleNavigate}
           currentPage={currentPage}
         />
 
-        <main className="flex-1 overflow-y-auto">
-          <Routes>
-            <Route path="/" element={<WelcomePage />} />
-            <Route path="/transfers" element={<TransferPage />} />
-            <Route path="/chat/:deviceId" element={<ChatPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
+        <main className="relative flex-1 overflow-hidden">
+          <div
+            key={location.pathname}
+            className="absolute inset-0 overflow-y-auto animate-page-rise"
+          >
+            <Routes location={location}>
+              <Route path="/" element={<WelcomePage />} />
+              <Route path="/transfers" element={<TransferPage />} />
+              <Route path="/chat/:deviceId" element={<ChatPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Routes>
+          </div>
         </main>
       </div>
 

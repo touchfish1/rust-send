@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useDropzone } from "react-dropzone"
 import { Download, FileUp, FolderOpen, Globe2, Info, Monitor, Paperclip, Send, X } from "lucide-react"
 import type { ChatAttachment, ChatMessage, DeviceInfo } from "@/types"
+import type { CSSProperties } from "react"
 
 type PendingFile = {
   id: string
@@ -323,9 +324,12 @@ export function ChatPage() {
   const shortDeviceId = deviceId ? `${deviceId.slice(0, 8)}...${deviceId.slice(-6)}` : ""
 
   return (
-    <div className="flex h-full flex-col animate-ink-fade">
-      <div className="flex items-center gap-3 border-b border-border/30 px-8 py-4">
-        <span className="flex h-10 w-10 items-center justify-center rounded-sm bg-muted text-muted-foreground">
+    <div className="relative flex h-full flex-col overflow-hidden animate-page-rise">
+      <div className="ambient-ink left-[8%] top-[12%] h-36 w-36 bg-primary/15" />
+      <div className="ambient-ink bottom-[10%] right-[8%] h-48 w-48 bg-border/35 [animation-delay:-6s]" />
+
+      <div className="relative z-10 flex items-center gap-3 border-b border-border/30 px-8 py-4 motion-stagger [--stagger-delay:40ms]">
+        <span className="flex h-10 w-10 items-center justify-center rounded-sm bg-muted text-muted-foreground shadow-[0_12px_30px_-22px_rgba(0,0,0,0.22)] transition-transform duration-300 hover:-translate-y-0.5">
           {device?.deviceType === "web" ? <Globe2 className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
         </span>
         <div className="min-w-0">
@@ -333,7 +337,8 @@ export function ChatPage() {
             <span className="text-sm font-medium">{device?.name || deviceId}</span>
             <span
               className={cn(
-                "inline-block h-2 w-2 rounded-full",
+                "inline-block h-2 w-2 rounded-full transition-transform duration-300",
+                isOnline && "animate-status-pulse",
                 isOnline ? "bg-emerald-500 shadow-[0_0_6px_-1px_rgba(34,197,94,0.3)]" : "bg-muted-foreground/30"
               )}
             />
@@ -353,12 +358,12 @@ export function ChatPage() {
         </div>
       </div>
 
-      <div ref={listRef} className="flex-1 overflow-y-auto px-8 py-6">
+      <div ref={listRef} className="relative z-10 flex-1 overflow-y-auto px-8 py-6">
         <div {...getRootProps({ className: "min-h-full" })}>
           <input {...getInputProps()} />
 
           {isDragActive && (
-            <div className="mb-4 rounded-md border-2 border-dashed border-primary/40 bg-primary/[0.02] py-8 text-center text-sm text-primary/60">
+            <div className="motion-stagger mb-4 rounded-md border-2 border-dashed border-primary/40 bg-primary/[0.02] py-8 text-center text-sm text-primary/60 [--stagger-delay:40ms]">
               拖放文件到此处
             </div>
           )}
@@ -370,10 +375,11 @@ export function ChatPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {peerMessages.map((message) => (
+              {peerMessages.map((message, index) => (
                 <MessageBubble
                   key={message.id}
                   message={message}
+                  index={index}
                   now={now}
                   peerOnline={isOnline}
                   onDownload={handleDownloadFile}
@@ -385,13 +391,14 @@ export function ChatPage() {
         </div>
       </div>
 
-      <div className="border-t border-border/30 px-8 py-4">
+      <div className="relative z-10 border-t border-border/30 px-8 py-4 backdrop-blur-sm">
         {pendingFiles.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-2">
-            {pendingFiles.map((file) => (
+            {pendingFiles.map((file, index) => (
               <div
                 key={file.id}
-                className="flex max-w-[240px] items-center gap-1.5 rounded-sm bg-muted/50 px-2.5 py-1.5 text-xs"
+                style={{ "--stagger-delay": `${60 + index * 40}ms` } as CSSProperties}
+                className="motion-stagger flex max-w-[240px] items-center gap-1.5 rounded-sm bg-muted/50 px-2.5 py-1.5 text-xs"
               >
                 <span>{getFileIcon(file.name)}</span>
                 <span className="truncate">{file.name}</span>
@@ -408,7 +415,7 @@ export function ChatPage() {
           </div>
         )}
 
-        <div className="flex items-end gap-3">
+        <div className="motion-stagger flex items-end gap-3 [--stagger-delay:80ms]">
           <Button
             type="button"
             variant="outline"
@@ -426,7 +433,7 @@ export function ChatPage() {
             onKeyDown={handleKeyDown}
             rows={1}
             placeholder="输入消息"
-            className="max-h-32 min-h-10 flex-1 resize-none rounded-sm border border-border/40 bg-muted/20 px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground/45 focus:border-primary/40"
+            className="max-h-32 min-h-10 flex-1 resize-none rounded-sm border border-border/40 bg-muted/20 px-3 py-2.5 text-sm outline-none transition-[border-color,background-color,box-shadow] duration-300 placeholder:text-muted-foreground/45 focus:border-primary/40 focus:bg-card/70 focus:shadow-[0_0_0_3px_hsl(var(--primary)/0.08)]"
           />
           <Button
             type="button"
@@ -536,12 +543,14 @@ function formatDateTime(iso: string) {
 
 function MessageBubble({
   message,
+  index,
   now,
   peerOnline,
   onDownload,
   onRevealFile,
 }: {
   message: ChatMessage
+  index: number
   now: number
   peerOnline: boolean
   onDownload: (message: ChatMessage, file: ChatAttachment) => void
@@ -550,14 +559,17 @@ function MessageBubble({
   const isOutgoing = message.direction === "outgoing"
 
   return (
-    <div className={cn("flex", isOutgoing ? "justify-end" : "justify-start")}>
+    <div
+      style={{ "--stagger-delay": `${Math.min(index * 40, 320)}ms` } as CSSProperties}
+      className={cn("motion-stagger flex", isOutgoing ? "justify-end" : "justify-start")}
+    >
       <div className={cn("max-w-[72%] space-y-1", isOutgoing ? "items-end" : "items-start")}>
         <div
           className={cn(
-            "rounded-md px-3.5 py-2.5 text-sm shadow-sm",
+            "rounded-md px-3.5 py-2.5 text-sm shadow-sm transition-[transform,box-shadow,background-color] duration-300 hover:-translate-y-0.5",
             isOutgoing
-              ? "bg-primary text-primary-foreground"
-              : "border border-border/45 bg-card text-card-foreground"
+              ? "bg-primary text-primary-foreground shadow-[0_16px_36px_-24px_hsl(var(--primary)/0.95)]"
+              : "border border-border/45 bg-card text-card-foreground hover:shadow-ink-md"
           )}
         >
           {message.kind === "text" ? (
@@ -690,7 +702,7 @@ function FileBubble({
       </div>
       {showProgress && (
         <div className="mt-2 space-y-1">
-          <Progress value={progress} size="sm" />
+          <Progress value={progress} size="sm" active={status === "sending" || status === "downloading"} />
           <div className={cn("text-[11px]", isOutgoing ? "text-primary-foreground/70" : "text-muted-foreground/60")}>
             {progress}%
           </div>

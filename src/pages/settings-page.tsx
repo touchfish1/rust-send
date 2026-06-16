@@ -2,18 +2,20 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { AppMark } from "@/components/branding/app-mark"
 import { useSettingsStore } from "@/stores/settings-store"
 import { useDeviceStore } from "@/stores/device-store"
 import { useToast } from "@/components/ui/toast"
+import type { CSSProperties, ReactNode } from "react"
 import { useCallback, useEffect, useState } from "react"
 import { useTheme } from "next-themes"
 import { isTauri } from "@/hooks/use-tauri-event"
 import { saveWebDeviceName } from "@/hooks/use-local-device-info"
 
-function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div>
-      <div className="mb-4 flex items-center gap-2 text-xs font-medium text-muted-foreground/60 tracking-wide">
+    <div className="motion-stagger" style={{ "--stagger-delay": "80ms" } as CSSProperties}>
+      <div className="mb-4 flex items-center gap-2 text-xs font-medium tracking-wide text-muted-foreground/60">
         <span className="inline-block h-3 w-0.5 rounded-full bg-border/60" />
         {title}
       </div>
@@ -31,17 +33,17 @@ function SettingsRow({
 }: {
   label: string
   description?: string
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between px-5 py-4 gap-4">
-      <div className="min-w-0">
+    <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="min-w-0 sm:max-w-[42%]">
         <div className="text-sm font-medium">{label}</div>
         {description && (
           <div className="mt-0.5 text-xs text-muted-foreground/60">{description}</div>
         )}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="w-full sm:w-auto sm:max-w-[58%]">{children}</div>
     </div>
   )
 }
@@ -129,8 +131,8 @@ export function SettingsPage() {
   }, [setTheme, setNextTheme])
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-2xl flex-col p-8 animate-ink-fade">
-      <h1 className="text-xl font-medium tracking-wide">设置</h1>
+    <div className="mx-auto flex h-full w-full max-w-3xl flex-col p-6 sm:p-8 animate-page-rise">
+      <h1 className="motion-stagger text-xl font-medium tracking-wide [--stagger-delay:30ms]">设置</h1>
 
       <div className="mt-6 space-y-8">
         <SettingsSection title="通用">
@@ -139,23 +141,23 @@ export function SettingsPage() {
               value={deviceName}
               onChange={(e) => setDeviceName(e.target.value)}
               onBlur={handleNameBlur}
-              className="h-8 w-44 text-sm"
+              className="h-9 w-full text-sm sm:w-52"
             />
           </SettingsRow>
 
           <SettingsRow label="下载目录" description="接收文件的默认保存位置">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground/60 truncate max-w-[120px]">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <span className="max-w-full truncate text-xs text-muted-foreground/60 sm:max-w-[160px]">
                 {downloadDir || "~/Downloads/rust-send"}
               </span>
-              <Button variant="outline" size="sm" roundness="sharp" className="text-xs" onClick={handlePickDir}>
+              <Button variant="outline" size="sm" roundness="sharp" className="self-start text-xs sm:self-auto" onClick={handlePickDir}>
                 选择
               </Button>
             </div>
           </SettingsRow>
 
           <SettingsRow label="分片大小" description="影响传输速度与内存占用">
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
               {[
                 { value: 65536, label: "64KB" },
                 { value: 262144, label: "256KB" },
@@ -164,7 +166,7 @@ export function SettingsPage() {
                 <button
                   key={opt.value}
                   onClick={() => setChunkSize(opt.value)}
-                  className={`rounded-sm px-3 py-1.5 transition-all ${
+                  className={`rounded-sm px-3 py-1.5 outline-none transition-all focus-visible:ring-2 focus-visible:ring-primary/20 ${
                     chunkSize === opt.value
                       ? "bg-primary/10 text-primary border border-primary/30"
                       : "text-muted-foreground/60 hover:text-foreground border border-transparent hover:border-border/40"
@@ -179,18 +181,18 @@ export function SettingsPage() {
 
         <SettingsSection title="网络">
           <SettingsRow label="中继服务器地址" description="外网传输时通过此服务器中转">
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Input
                 value={relayUrl}
                 onChange={(e) => setRelayUrl(e.target.value)}
                 placeholder="wss://relay.rust-send.dev:443"
-                className="h-8 w-56 text-xs font-mono"
+                className="h-9 w-full text-xs font-mono sm:w-64"
               />
               <Button
                 variant="outline"
                 size="sm"
                 roundness="sharp"
-                className="text-xs"
+                className="self-start text-xs sm:self-auto"
                 onClick={handleConnectRelay}
                 loading={testingRelay}
               >
@@ -206,7 +208,7 @@ export function SettingsPage() {
 
         <SettingsSection title="外观">
           <SettingsRow label="主题">
-            <div className="flex items-center gap-1 text-xs">
+            <div className="flex flex-wrap items-center gap-1 text-xs">
               {[
                 { value: "system" as const, label: "跟随系统" },
                 { value: "light" as const, label: "浅色" },
@@ -215,7 +217,7 @@ export function SettingsPage() {
                 <button
                   key={t.value}
                   onClick={() => handleThemeChange(t.value)}
-                  className={`rounded-sm px-3 py-1.5 transition-all ${
+                  className={`rounded-sm px-3 py-1.5 outline-none transition-all focus-visible:ring-2 focus-visible:ring-primary/20 ${
                     theme === t.value
                       ? "bg-primary/10 text-primary border border-primary/30"
                       : "text-muted-foreground/60 hover:text-foreground border border-transparent hover:border-border/40"
@@ -231,9 +233,7 @@ export function SettingsPage() {
         <SettingsSection title="关于">
           <div className="px-5 py-4">
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-sm bg-primary/10 text-sm text-primary font-serif">
-                送
-              </span>
+              <AppMark size="md" className="bg-primary/95" />
               <div>
                 <div className="text-sm font-medium">rust-send</div>
                 <div className="text-xs text-muted-foreground/60">
