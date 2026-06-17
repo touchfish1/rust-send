@@ -77,7 +77,7 @@ jobs:
             . -> target
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build app and upload release assets
         uses: tauri-apps/tauri-action@v0
