@@ -83,9 +83,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           releaseName: "rust-send ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-          releaseBody: "Desktop installers are attached below. These builds are unsigned unless signing secrets are configured."
-          releaseDraft: ${{ github.event_name != 'workflow_dispatch' || inputs.draft }}
+          releaseBody: "Desktop installers and updater metadata are attached below."
+          releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease }}
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true

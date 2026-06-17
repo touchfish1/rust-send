@@ -5,12 +5,16 @@ import { Switch } from "@/components/ui/switch"
 import { AppMark } from "@/components/branding/app-mark"
 import { useSettingsStore } from "@/stores/settings-store"
 import { useDeviceStore } from "@/stores/device-store"
+import { useUpdateStore } from "@/stores/update-store"
 import { useToast } from "@/components/ui/toast"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import type { CSSProperties, ReactNode } from "react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useTheme } from "next-themes"
 import { isTauri } from "@/hooks/use-tauri-event"
 import { saveWebDeviceName } from "@/hooks/use-local-device-info"
+import { checkForUpdates, downloadAndInstallUpdate } from "@/services/update-service"
 
 function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -52,16 +56,28 @@ export function SettingsPage() {
   const downloadDir = useSettingsStore((s) => s.downloadDir)
   const chunkSize = useSettingsStore((s) => s.chunkSize)
   const autoAcceptLan = useSettingsStore((s) => s.autoAcceptLan)
+  const autoCheckUpdates = useSettingsStore((s) => s.autoCheckUpdates)
   const relayUrl = useSettingsStore((s) => s.relayUrl)
   const theme = useSettingsStore((s) => s.theme)
   const setDownloadDir = useSettingsStore((s) => s.setDownloadDir)
   const setChunkSize = useSettingsStore((s) => s.setChunkSize)
   const setAutoAcceptLan = useSettingsStore((s) => s.setAutoAcceptLan)
+  const setAutoCheckUpdates = useSettingsStore((s) => s.setAutoCheckUpdates)
   const setRelayUrl = useSettingsStore((s) => s.setRelayUrl)
   const setTheme = useSettingsStore((s) => s.setTheme)
   const localId = useDeviceStore((s) => s.localId)
   const localName = useDeviceStore((s) => s.localName)
   const setLocalInfo = useDeviceStore((s) => s.setLocalInfo)
+  const currentVersion = useUpdateStore((s) => s.currentVersion)
+  const latestVersion = useUpdateStore((s) => s.latestVersion)
+  const latestNotes = useUpdateStore((s) => s.latestNotes)
+  const latestDate = useUpdateStore((s) => s.latestDate)
+  const checkingUpdate = useUpdateStore((s) => s.checking)
+  const downloadingUpdate = useUpdateStore((s) => s.downloading)
+  const downloadProgress = useUpdateStore((s) => s.downloadProgress)
+  const downloadedBytes = useUpdateStore((s) => s.downloadedBytes)
+  const totalBytes = useUpdateStore((s) => s.totalBytes)
+  const updateError = useUpdateStore((s) => s.error)
   const { toast } = useToast()
   const { setTheme: setNextTheme } = useTheme()
 
@@ -129,6 +145,57 @@ export function SettingsPage() {
     setTheme(t)
     setNextTheme(t)
   }, [setTheme, setNextTheme])
+
+  const handleCheckUpdates = useCallback(async () => {
+    try {
+      const result = await checkForUpdates()
+      if (!result.supported) {
+        toast("当前仅桌面端支持应用内升级", "warning")
+        return
+      }
+
+      if (!result.available) {
+        toast("当前已是最新版本", "success")
+        return
+      }
+
+      toast(`发现新版本 ${result.latestVersion}`, "info")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "检查更新失败"
+      toast(message, "error")
+    }
+  }, [toast])
+
+  const handleInstallUpdate = useCallback(async () => {
+    try {
+      const result = await downloadAndInstallUpdate()
+      if (!result.installed) {
+        toast("当前已是最新版本", "success")
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "下载安装更新失败"
+      toast(message, "error")
+    }
+  }, [toast])
+
+  const downloadStatus = useMemo(() => {
+    if (!downloadingUpdate) return ""
+    if (totalBytes && totalBytes > 0) {
+      const downloadedMb = (downloadedBytes / 1024 / 1024).toFixed(1)
+      const totalMb = (totalBytes / 1024 / 1024).toFixed(1)
+      return `${downloadedMb} / ${totalMb} MB`
+    }
+
+    if (downloadProgress > 0) {
+      return `${downloadProgress.toFixed(0)}%`
+    }
+
+    return "准备下载..."
+  }, [downloadProgress, downloadedBytes, downloadingUpdate, totalBytes])
+
+  const desktopApp = isTauri()
+  const versionLabel = currentVersion || __APP_VERSION__
+  const canInstallUpdate = desktopApp && !!latestVersion && !downloadingUpdate
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col p-6 sm:p-8 animate-page-rise">
@@ -206,6 +273,84 @@ export function SettingsPage() {
           </SettingsRow>
         </SettingsSection>
 
+        <SettingsSection title="更新">
+          <SettingsRow label="自动检查更新" description="应用启动后静默检查新版本，不会打断正在传输的任务">
+            <Switch checked={autoCheckUpdates} onCheckedChange={setAutoCheckUpdates} />
+          </SettingsRow>
+
+          <SettingsRow label="当前版本" description="桌面端支持下载并重启完成升级">
+            <div className="flex w-full flex-col gap-3 sm:min-w-[280px]">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">v{versionLabel}</Badge>
+                {!desktopApp ? (
+                  <Badge variant="outline">仅桌面端支持应用内升级</Badge>
+                ) : latestVersion ? (
+                  <Badge variant="warning">可升级到 v{latestVersion}</Badge>
+                ) : (
+                  <Badge variant="success">已跟上最新</Badge>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  roundness="sharp"
+                  onClick={handleCheckUpdates}
+                  loading={checkingUpdate}
+                >
+                  {checkingUpdate ? "检查中..." : "检查更新"}
+                </Button>
+
+                {canInstallUpdate && (
+                  <Button
+                    size="sm"
+                    roundness="sharp"
+                    onClick={handleInstallUpdate}
+                    loading={downloadingUpdate}
+                  >
+                    {downloadingUpdate ? "下载中..." : "下载并安装"}
+                  </Button>
+                )}
+              </div>
+
+              {downloadingUpdate && (
+                <div className="space-y-2 rounded-sm border border-border/40 bg-muted/35 px-3 py-3">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground/70">
+                    <span>更新下载中</span>
+                    <span>{downloadStatus}</span>
+                  </div>
+                  <Progress value={downloadProgress} active size="sm" />
+                </div>
+              )}
+
+              {updateError && (
+                <div className="rounded-sm border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                  {updateError}
+                </div>
+              )}
+
+              {latestVersion && (
+                <div className="rounded-sm border border-border/40 bg-muted/35 px-3 py-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground/70">
+                    <span>最新版本 v{latestVersion}</span>
+                    {latestDate && <span>发布时间 {new Date(latestDate).toLocaleDateString()}</span>}
+                  </div>
+                  {latestNotes ? (
+                    <p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-foreground/80">
+                      {latestNotes}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground/70">
+                      这次版本没有附带更新说明，但已经可以直接下载安装。
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </SettingsRow>
+        </SettingsSection>
+
         <SettingsSection title="外观">
           <SettingsRow label="主题">
             <div className="flex flex-wrap items-center gap-1 text-xs">
@@ -237,7 +382,7 @@ export function SettingsPage() {
               <div>
                 <div className="text-sm font-medium">rust-send</div>
                 <div className="text-xs text-muted-foreground/60">
-                  版本 0.1.0 · Rust 后端 · React 前端 · WebRTC 传输
+                  版本 {versionLabel} · Rust 后端 · React 前端 · WebRTC 传输
                 </div>
               </div>
             </div>

@@ -58,6 +58,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState {
             receiver_data_channels: data_channels.clone(),
             config: std::sync::Mutex::new(config),
@@ -67,6 +68,10 @@ pub fn run() {
             pending_outgoing: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         })
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
             let handle = app.handle().clone();
 
             if let Some(window) = app.get_webview_window("main") {

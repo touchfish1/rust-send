@@ -7,6 +7,7 @@ describe("SettingsStore", () => {
       downloadDir: "",
       chunkSize: 65536,
       autoAcceptLan: false,
+      autoCheckUpdates: true,
       relayUrl: "",
       theme: "system",
     })
@@ -16,6 +17,7 @@ describe("SettingsStore", () => {
     const state = useSettingsStore.getState()
     expect(state.chunkSize).toBe(65536)
     expect(state.autoAcceptLan).toBe(false)
+    expect(state.autoCheckUpdates).toBe(true)
     expect(state.theme).toBe("system")
   })
 
@@ -32,6 +34,11 @@ describe("SettingsStore", () => {
   it("toggles auto accept", () => {
     useSettingsStore.getState().setAutoAcceptLan(true)
     expect(useSettingsStore.getState().autoAcceptLan).toBe(true)
+  })
+
+  it("toggles auto check updates", () => {
+    useSettingsStore.getState().setAutoCheckUpdates(false)
+    expect(useSettingsStore.getState().autoCheckUpdates).toBe(false)
   })
 
   it("sets relay URL", () => {

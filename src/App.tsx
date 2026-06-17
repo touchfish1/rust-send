@@ -16,7 +16,10 @@ import { isTauri } from "@/hooks/use-tauri-event"
 import { useChatStore } from "@/stores/chat-store"
 import { useCallback, useEffect } from "react"
 import { useSettingsStore } from "@/stores/settings-store"
+import { useUpdateStore } from "@/stores/update-store"
 import { extractRelayUrlFromLocation } from "@/lib/pairing"
+import { bootstrapUpdater, checkForUpdates } from "@/services/update-service"
+import { useToast } from "@/components/ui/toast"
 
 export default function App() {
   const navigate = useNavigate()
@@ -27,6 +30,9 @@ export default function App() {
   const incoming = useTransferStore((s) => s.incoming)
   const setIncoming = useTransferStore((s) => s.setIncoming)
   const setRelayUrl = useSettingsStore((s) => s.setRelayUrl)
+  const autoCheckUpdates = useSettingsStore((s) => s.autoCheckUpdates)
+  const updateAvailable = useUpdateStore((s) => !!s.latestVersion)
+  const { toast } = useToast()
 
   useDeviceEvents()
   useTransferEvents()
@@ -43,6 +49,28 @@ export default function App() {
       setRelayUrl(relayUrl)
     }
   }, [setRelayUrl])
+
+  useEffect(() => {
+    let cancelled = false
+
+    ;(async () => {
+      const result = await bootstrapUpdater()
+      if (cancelled || !result.supported || !autoCheckUpdates) return
+
+      const checked = await checkForUpdates({ silent: true })
+      if (!cancelled && checked.supported && checked.available) {
+        toast(`发现新版本 ${checked.latestVersion}，可前往设置完成更新`, "info")
+      }
+    })().catch((error) => {
+      if (!cancelled) {
+        console.warn("bootstrap updater failed", error)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [autoCheckUpdates, toast])
 
   const path = location.pathname
   const currentPage = path === "/" ? "welcome" : path.split("/")[1]
@@ -129,6 +157,7 @@ export default function App() {
           onSelectDevice={handleSelectDevice}
           onNavigate={handleNavigate}
           currentPage={currentPage}
+          updateAvailable={updateAvailable}
         />
 
         <main className="relative flex-1 overflow-hidden">

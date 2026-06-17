@@ -7,6 +7,9 @@ const host = process.env.TAURI_DEV_HOST
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
+  define: {
+    __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? "0.1.0"),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
