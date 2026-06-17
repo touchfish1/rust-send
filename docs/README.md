@@ -13,5 +13,6 @@
 | [diagrams.md](./diagrams.md) | **状态机:** 增加 Queued/Reconnecting/Paused 细分/Expired/Verifying 超时; **时序图:** 增加暂停/恢复/取消/chunk_request续传/batch_complete |
 | [task-plan.md](./task-plan.md) | **完整任务规划:** 7 个 Phase、79 个子任务、依赖图、交付 Checklist、风险矩阵 |
 | [aesthetics.md](./aesthetics.md) | **中国水墨风格**: 色彩系统（宣纸/墨/朱砂/青绿/赭石）、字体层级、布局间距、圆角边框、阴影、图标、动画、Logo、shadcn HSL 覆盖 |
+| [release.md](./release.md) | GitHub Actions 自动打包 Windows / macOS / Linux，并生成 GitHub Release 草稿 |
 | [architecture.md](./architecture.md) | 技术栈、项目结构、架构图 |
 | [components.md](./components.md) | 前端技术栈、shadcn 组件清单、设计系统 |
