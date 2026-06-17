@@ -274,7 +274,8 @@ pub fn run() {
 
 fn persist_history_record(app: &tauri::AppHandle, record: core::file::TransferRecord) {
     let state = app.state::<AppState>();
-    if let Ok(mut history) = state.history.lock() {
+    let history_result = state.history.lock();
+    if let Ok(mut history) = history_result {
         history.add(record);
         if let Err(error) = crate::storage::history::save(&history) {
             tracing::warn!("save history failed: {}", error);
