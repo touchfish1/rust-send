@@ -24,6 +24,8 @@ const DEFAULT_FILE_OFFER_TTL_MS = 2 * 60 * 60 * 1000
 export function ChatPage() {
   const { deviceId } = useParams<{ deviceId: string }>()
   const devices = useDeviceStore((s) => s.devices)
+  const trustedDeviceIds = useDeviceStore((s) => s.trustedDeviceIds)
+  const toggleTrustedDevice = useDeviceStore((s) => s.toggleTrustedDevice)
   const device = deviceId ? devices.get(deviceId) : undefined
   const messages = useChatStore((s) => s.messages)
   const addMessage = useChatStore((s) => s.addMessage)
@@ -319,6 +321,7 @@ export function ChatPage() {
   )
 
   const isOnline = device?.status !== "offline"
+  const isTrusted = !!deviceId && trustedDeviceIds.includes(deviceId)
   const connectionLabel = device?.status === "relay" ? "中继" : "LAN"
   const canSend = !!deviceId && (!!draft.trim() || pendingFiles.length > 0)
   const shortDeviceId = deviceId ? `${deviceId.slice(0, 8)}...${deviceId.slice(-6)}` : ""
@@ -335,6 +338,11 @@ export function ChatPage() {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">{device?.name || deviceId}</span>
+            {isTrusted && (
+              <span className="rounded-sm border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600/85">
+                可信设备
+              </span>
+            )}
             <span
               className={cn(
                 "inline-block h-2 w-2 rounded-full transition-transform duration-300",
@@ -453,7 +461,13 @@ export function ChatPage() {
         <DeviceInfoDialog
           deviceId={deviceId || ""}
           device={device}
+          trusted={isTrusted}
           connectionLabel={connectionLabel}
+          onToggleTrusted={() => {
+            if (deviceId) {
+              toggleTrustedDevice(deviceId)
+            }
+          }}
           onClose={() => setShowDeviceInfo(false)}
         />
       )}
@@ -464,12 +478,16 @@ export function ChatPage() {
 function DeviceInfoDialog({
   deviceId,
   device,
+  trusted,
   connectionLabel,
+  onToggleTrusted,
   onClose,
 }: {
   deviceId: string
   device?: DeviceInfo
+  trusted: boolean
   connectionLabel: string
+  onToggleTrusted: () => void
   onClose: () => void
 }) {
   const typeLabel = device?.deviceType === "web" ? "Web 客户端" : "桌面客户端"
@@ -503,6 +521,12 @@ function DeviceInfoDialog({
           <InfoRow label="IP / 地址" value={address} monospace />
           <InfoRow label="上线时间" value={onlineAt} />
           <InfoRow label="最后活跃" value={lastSeen} />
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" size="sm" roundness="sharp" onClick={onToggleTrusted}>
+            {trusted ? "取消可信设备" : "设为可信设备"}
+          </Button>
         </div>
       </div>
     </div>

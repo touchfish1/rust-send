@@ -30,6 +30,7 @@ export default function App() {
   const location = useLocation()
   const devices = useDeviceStore((s) => s.devices)
   const recentDevices = useDeviceStore((s) => s.recentDevices)
+  const trustedDeviceIds = useDeviceStore((s) => s.trustedDeviceIds)
   const localName = useDeviceStore((s) => s.localName)
   const connectionStatus = useDeviceStore((s) => s.status)
   const incoming = useTransferStore((s) => s.incoming)
@@ -185,6 +186,7 @@ export default function App() {
           connectionStatus={connectionStatus.state}
           devices={Array.from(devices.values())}
           recentDevices={recentDevices}
+          trustedDeviceIds={trustedDeviceIds}
           activeDeviceId={activeDeviceId}
           onSelectDevice={handleSelectDevice}
           onNavigate={handleNavigate}

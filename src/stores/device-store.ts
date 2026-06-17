@@ -9,6 +9,7 @@ interface DeviceState {
   localName: string
   devices: Map<string, DeviceInfo>
   recentDevices: DeviceInfo[]
+  trustedDeviceIds: string[]
   status: ConnectionStatus
 
   setLocalInfo: (id: string, name: string) => void
@@ -16,6 +17,10 @@ interface DeviceState {
   addDevice: (device: DeviceInfo) => void
   removeDevice: (id: string) => void
   setStatus: (status: ConnectionStatus) => void
+  trustDevice: (id: string) => void
+  untrustDevice: (id: string) => void
+  toggleTrustedDevice: (id: string) => void
+  clearTrustedDevices: () => void
   clearRecentDevices: () => void
 }
 
@@ -26,6 +31,7 @@ export const useDeviceStore = create<DeviceState>()(
       localName: "",
       devices: new Map(),
       recentDevices: [],
+      trustedDeviceIds: [],
       status: { state: "offline" },
 
       setLocalInfo: (id, name) => set({ localId: id, localName: name }),
@@ -70,16 +76,41 @@ export const useDeviceStore = create<DeviceState>()(
 
       setStatus: (status) => set({ status }),
 
+      trustDevice: (id) =>
+        set((state) => ({
+          trustedDeviceIds: addTrustedDevice(state.trustedDeviceIds, id),
+        })),
+
+      untrustDevice: (id) =>
+        set((state) => ({
+          trustedDeviceIds: state.trustedDeviceIds.filter((deviceId) => deviceId !== id),
+        })),
+
+      toggleTrustedDevice: (id) =>
+        set((state) => ({
+          trustedDeviceIds: state.trustedDeviceIds.includes(id)
+            ? state.trustedDeviceIds.filter((deviceId) => deviceId !== id)
+            : addTrustedDevice(state.trustedDeviceIds, id),
+        })),
+
+      clearTrustedDevices: () => set({ trustedDeviceIds: [] }),
+
       clearRecentDevices: () => set({ recentDevices: [] }),
     }),
     {
       name: "rust-send-devices",
       partialize: (state) => ({
         recentDevices: state.recentDevices,
+        trustedDeviceIds: state.trustedDeviceIds,
       }),
     }
   )
 )
+
+function addTrustedDevice(current: string[], id: string) {
+  if (current.includes(id)) return current
+  return [...current, id]
+}
 
 function mergeRecentDevices(current: DeviceInfo[], incoming: DeviceInfo[]) {
   const byId = new Map<string, DeviceInfo>()

@@ -36,6 +36,7 @@ describe("Sidebar", () => {
             status: "offline",
           },
         ]}
+        trustedDeviceIds={["recent-1"]}
         currentPage="welcome"
         onNavigate={onNavigate}
         onSelectDevice={onSelectDevice}
@@ -47,6 +48,7 @@ describe("Sidebar", () => {
     expect(screen.getByText("Office Mac")).toBeInTheDocument()
     expect(screen.getByText("Old Web Session")).toBeInTheDocument()
     expect(screen.getByText("最近")).toBeInTheDocument()
+    expect(screen.getByText("可信")).toBeInTheDocument()
   })
 
   it("selects a recent device when clicked", () => {
@@ -64,6 +66,7 @@ describe("Sidebar", () => {
             status: "offline",
           },
         ]}
+        trustedDeviceIds={[]}
         currentPage="welcome"
         onNavigate={onNavigate}
         onSelectDevice={onSelectDevice}

@@ -9,6 +9,7 @@ interface SidebarProps {
   connectionStatus: "lan" | "relay" | "offline"
   devices: DeviceInfo[]
   recentDevices: DeviceInfo[]
+  trustedDeviceIds: string[]
   activeDeviceId?: string
   onSelectDevice: (id: string) => void
   onNavigate: (page: string) => void
@@ -45,13 +46,16 @@ export function Sidebar({
   connectionStatus,
   devices,
   recentDevices,
+  trustedDeviceIds,
   activeDeviceId,
   onSelectDevice,
   onNavigate,
   currentPage,
   updateAvailable = false,
 }: SidebarProps) {
-  const offlineRecentDevices = recentDevices.filter((device) => !devices.some((online) => online.id === device.id))
+  const offlineRecentDevices = recentDevices
+    .filter((device) => !devices.some((online) => online.id === device.id))
+    .sort((a, b) => Number(trustedDeviceIds.includes(b.id)) - Number(trustedDeviceIds.includes(a.id)))
 
   return (
     <aside className="flex w-72 flex-col border-r border-border/50 bg-muted/30 backdrop-blur-sm animate-ink-slide">
@@ -95,6 +99,7 @@ export function Sidebar({
                     <DeviceListItem
                       key={device.id}
                       device={device}
+                      trusted={trustedDeviceIds.includes(device.id)}
                       activeDeviceId={activeDeviceId}
                       index={index}
                       onSelectDevice={onSelectDevice}
@@ -119,6 +124,7 @@ export function Sidebar({
                     <DeviceListItem
                       key={device.id}
                       device={device}
+                      trusted={trustedDeviceIds.includes(device.id)}
                       activeDeviceId={activeDeviceId}
                       index={devices.length + index}
                       onSelectDevice={onSelectDevice}
@@ -177,12 +183,14 @@ export function Sidebar({
 
 function DeviceListItem({
   device,
+  trusted,
   activeDeviceId,
   index,
   onSelectDevice,
   recent = false,
 }: {
   device: DeviceInfo
+  trusted?: boolean
   activeDeviceId?: string
   index: number
   onSelectDevice: (id: string) => void
@@ -216,6 +224,7 @@ function DeviceListItem({
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-2">
           <span className="truncate font-medium">{device.name}</span>
+          {trusted && <Badge variant="success" className="px-1.5 py-0 text-[10px]">可信</Badge>}
           {recent && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">最近</Badge>}
         </div>
         {device.lastSeen && (

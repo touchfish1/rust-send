@@ -15,6 +15,7 @@ import { useTheme } from "next-themes"
 import { isTauri } from "@/hooks/use-tauri-event"
 import { saveWebDeviceName } from "@/hooks/use-local-device-info"
 import { checkForUpdates, downloadAndInstallUpdate } from "@/services/update-service"
+import type { DeviceInfo } from "@/types"
 
 function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -67,7 +68,12 @@ export function SettingsPage() {
   const setTheme = useSettingsStore((s) => s.setTheme)
   const localId = useDeviceStore((s) => s.localId)
   const localName = useDeviceStore((s) => s.localName)
+  const devices = useDeviceStore((s) => s.devices)
+  const recentDevices = useDeviceStore((s) => s.recentDevices)
+  const trustedDeviceIds = useDeviceStore((s) => s.trustedDeviceIds)
   const setLocalInfo = useDeviceStore((s) => s.setLocalInfo)
+  const toggleTrustedDevice = useDeviceStore((s) => s.toggleTrustedDevice)
+  const clearTrustedDevices = useDeviceStore((s) => s.clearTrustedDevices)
   const currentVersion = useUpdateStore((s) => s.currentVersion)
   const latestVersion = useUpdateStore((s) => s.latestVersion)
   const latestNotes = useUpdateStore((s) => s.latestNotes)
@@ -196,6 +202,10 @@ export function SettingsPage() {
   const desktopApp = isTauri()
   const versionLabel = currentVersion || __APP_VERSION__
   const canInstallUpdate = desktopApp && !!latestVersion && !downloadingUpdate
+  const knownDevices = useMemo(
+    () => buildKnownDevices(Array.from(devices.values()), recentDevices, trustedDeviceIds),
+    [devices, recentDevices, trustedDeviceIds]
+  )
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col p-6 sm:p-8 animate-page-rise">
@@ -270,6 +280,63 @@ export function SettingsPage() {
 
           <SettingsRow label="局域网自动接收" description="开启后局域网设备发来的文件自动保存">
             <Switch checked={autoAcceptLan} onCheckedChange={setAutoAcceptLan} />
+          </SettingsRow>
+        </SettingsSection>
+
+        <SettingsSection title="设备信任">
+          <SettingsRow label="可信设备" description="对常用设备做标记，后续可作为自动连接和更安全确认的基础">
+            <div className="flex w-full flex-col gap-3 sm:min-w-[320px]">
+              {knownDevices.length > 0 ? (
+                <div className="space-y-2">
+                  {knownDevices.map((device) => {
+                    const trusted = trustedDeviceIds.includes(device.id)
+                    return (
+                      <div
+                        key={device.id}
+                        className="flex items-center justify-between gap-3 rounded-sm border border-border/40 bg-muted/35 px-3 py-2.5"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-medium">{device.name}</span>
+                            {trusted && <Badge variant="success">可信</Badge>}
+                          </div>
+                          <div className="mt-0.5 text-xs text-muted-foreground/60">
+                            {device.deviceType === "web" ? "Web 端" : "桌面端"} · {device.status === "offline" ? "最近出现" : "当前在线"}
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          roundness="sharp"
+                          className="shrink-0"
+                          onClick={() => toggleTrustedDevice(device.id)}
+                        >
+                          {trusted ? "取消可信" : "设为可信"}
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-sm border border-dashed border-border/40 px-3 py-3 text-xs text-muted-foreground/60">
+                  暂时还没有可管理的设备，先连接过一次设备后会出现在这里。
+                </div>
+              )}
+
+              {trustedDeviceIds.length > 0 && (
+                <div className="flex justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    roundness="sharp"
+                    className="text-xs text-muted-foreground/60 hover:text-foreground"
+                    onClick={clearTrustedDevices}
+                  >
+                    清空可信设备
+                  </Button>
+                </div>
+              )}
+            </div>
           </SettingsRow>
         </SettingsSection>
 
@@ -399,4 +466,35 @@ export function SettingsPage() {
       </div>
     </div>
   )
+}
+
+function buildKnownDevices(
+  onlineDevices: DeviceInfo[],
+  recentDevices: DeviceInfo[],
+  trustedDeviceIds: string[]
+) {
+  const merged = new Map<string, DeviceInfo>()
+
+  for (const device of recentDevices) {
+    merged.set(device.id, device)
+  }
+
+  for (const device of onlineDevices) {
+    merged.set(device.id, {
+      ...merged.get(device.id),
+      ...device,
+    })
+  }
+
+  return Array.from(merged.values()).sort((a, b) => {
+    const trustedRank = Number(trustedDeviceIds.includes(b.id)) - Number(trustedDeviceIds.includes(a.id))
+    if (trustedRank !== 0) return trustedRank
+    return getTimestamp(b.lastSeen) - getTimestamp(a.lastSeen)
+  })
+}
+
+function getTimestamp(value?: string) {
+  if (!value) return 0
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? timestamp : 0
 }

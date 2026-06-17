@@ -22,6 +22,7 @@ describe("DeviceStore", () => {
       localName: "",
       devices: new Map(),
       recentDevices: [],
+      trustedDeviceIds: [],
       status: { state: "offline" },
     })
   })
@@ -76,5 +77,27 @@ describe("DeviceStore", () => {
     expect(useDeviceStore.getState().recentDevices.length).toBe(1)
     useDeviceStore.getState().clearRecentDevices()
     expect(useDeviceStore.getState().recentDevices.length).toBe(0)
+  })
+
+  it("marks and unmarks trusted devices", () => {
+    useDeviceStore.getState().trustDevice("dev-1")
+    expect(useDeviceStore.getState().trustedDeviceIds).toEqual(["dev-1"])
+
+    useDeviceStore.getState().toggleTrustedDevice("dev-1")
+    expect(useDeviceStore.getState().trustedDeviceIds).toEqual([])
+
+    useDeviceStore.getState().toggleTrustedDevice("dev-2")
+    expect(useDeviceStore.getState().trustedDeviceIds).toEqual(["dev-2"])
+
+    useDeviceStore.getState().untrustDevice("dev-2")
+    expect(useDeviceStore.getState().trustedDeviceIds).toEqual([])
+  })
+
+  it("clears trusted devices", () => {
+    useDeviceStore.getState().trustDevice("dev-1")
+    useDeviceStore.getState().trustDevice("dev-2")
+    expect(useDeviceStore.getState().trustedDeviceIds.length).toBe(2)
+    useDeviceStore.getState().clearTrustedDevices()
+    expect(useDeviceStore.getState().trustedDeviceIds).toEqual([])
   })
 })
