@@ -39,7 +39,10 @@ pub async fn run_file_receive(
                 Ok(ControlSignal::Resume) => {
                     paused = false;
                     progress_tx
-                        .send(ProgressEvent::Resumed { file_id: meta.id })
+                        .send(ProgressEvent::Resumed {
+                            transfer_id,
+                            file_id: meta.id,
+                        })
                         .await
                         .ok();
                     continue;
@@ -63,6 +66,7 @@ pub async fn run_file_receive(
                     Ok(ControlSignal::Pause) => {
                         paused = true;
                         progress_tx.send(ProgressEvent::Paused {
+                            transfer_id,
                             reason: "user".into(),
                         }).await.ok();
                         continue;

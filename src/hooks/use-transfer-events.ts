@@ -5,7 +5,9 @@ import { useChatStore } from "@/stores/chat-store"
 import type {
   TransferProgress,
   IncomingTransfer,
+  TransferState,
 } from "@/types"
+import { normalizeTransferState } from "@/lib/transfer-normalize"
 
 const DEFAULT_OFFER_TTL_MS = 2 * 60 * 60 * 1000
 
@@ -14,6 +16,10 @@ export function useTransferEvents() {
   const completeTransfer = useTransferStore((s) => s.completeTransfer)
   const failTransfer = useTransferStore((s) => s.failTransfer)
   const cancelTransfer = useTransferStore((s) => s.cancelTransfer)
+  const upsertTransfer = useTransferStore((s) => s.upsertTransfer)
+  const queueTransfer = useTransferStore((s) => s.queueTransfer)
+  const pauseTransfer = useTransferStore((s) => s.pauseTransfer)
+  const resumeTransfer = useTransferStore((s) => s.resumeTransfer)
   const addMessage = useChatStore((s) => s.addMessage)
   const updateFileProgress = useChatStore((s) => s.updateFileProgress)
   const markFileStatus = useChatStore((s) => s.markFileStatus)
@@ -55,12 +61,19 @@ export function useTransferEvents() {
   )
 
   const onFailed = useCallback(
-    (p: { file_id?: string; fileId?: string; error: string }) => {
+    (p: { transfer_id?: string; transferId?: string; file_id?: string; fileId?: string; error: string }) => {
       const fileId = String(p.fileId || p.file_id || "")
       failTransfer(fileId, p.error)
       markFileStatus(fileId, "failed")
     },
     [failTransfer, markFileStatus]
+  )
+
+  const onTransferState = useCallback(
+    (payload: TransferState | Record<string, unknown>) => {
+      upsertTransfer(normalizeTransferState(payload as Record<string, unknown>))
+    },
+    [upsertTransfer]
   )
 
   const onIncoming = useCallback(
@@ -101,17 +114,21 @@ export function useTransferEvents() {
   )
 
   const onPaused = useCallback(
-    (_p: { transfer_id: string; reason: string }) => {
-      // store 通过 progress 事件更新状态
+    (p: { transfer_id?: string; transferId?: string; reason?: string }) => {
+      const transferId = String(p.transferId || p.transfer_id || "")
+      if (!transferId) return
+      pauseTransfer(transferId, p.reason)
     },
-    []
+    [pauseTransfer]
   )
 
   const onResumed = useCallback(
-    (_p: { file_id: string }) => {
-      // store 通过 progress 事件更新状态
+    (p: { transfer_id?: string; transferId?: string }) => {
+      const transferId = String(p.transferId || p.transfer_id || "")
+      if (!transferId) return
+      resumeTransfer(transferId)
     },
-    []
+    [resumeTransfer]
   )
 
   const onCancelled = useCallback(
@@ -120,12 +137,15 @@ export function useTransferEvents() {
   )
 
   const onQueued = useCallback(
-    (_p: { transfer_id: string; position: number }) => {
-      // 可以通过 addTransfer 添加排队状态
+    (p: { transfer_id?: string; transferId?: string; position?: number }) => {
+      const transferId = String(p.transferId || p.transfer_id || "")
+      if (!transferId) return
+      queueTransfer(transferId, Number(p.position || 0))
     },
-    []
+    [queueTransfer]
   )
 
+  useTauriEvent("transfer:state", onTransferState)
   useTauriEvent("transfer:progress", onProgress)
   useTauriEvent("transfer:complete", onComplete)
   useTauriEvent("transfer:batch_complete", onBatchComplete)

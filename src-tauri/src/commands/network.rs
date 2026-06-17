@@ -215,10 +215,17 @@ pub async fn process_relay_events_internal(
                         client: pending.client,
                         peer_id: target_id,
                     };
-                    engine
-                        .lock()
-                        .await
-                        .start_send(peer, pending.target_name, files, paths);
+                    let transfer_state = {
+                        let mut engine = engine.lock().await;
+                        let transfer_id = engine.start_send(peer, pending.target_name, files, paths);
+                        engine
+                            .active_transfers()
+                            .into_iter()
+                            .find(|transfer| transfer.id == transfer_id)
+                    };
+                    if let Some(transfer_state) = transfer_state {
+                        let _ = app_handle.emit("transfer:state", &transfer_state);
+                    }
                 }
             }
             RelayEvent::TransferRejected {

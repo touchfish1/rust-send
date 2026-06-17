@@ -199,14 +199,20 @@ pub fn run() {
                                 "transfer_id": transfer_id, "file_id": file_id, "error": error,
                             })).ok();
                         }
-                        ProgressEvent::Paused { reason } => {
+                        ProgressEvent::Paused {
+                            transfer_id,
+                            reason,
+                        } => {
                             handle
-                                .emit("transfer:paused", json!({"reason": reason}))
+                                .emit("transfer:paused", json!({"transfer_id": transfer_id, "reason": reason}))
                                 .ok();
                         }
-                        ProgressEvent::Resumed { file_id } => {
+                        ProgressEvent::Resumed {
+                            transfer_id,
+                            file_id,
+                        } => {
                             handle
-                                .emit("transfer:resumed", json!({"file_id": file_id}))
+                                .emit("transfer:resumed", json!({"transfer_id": transfer_id, "file_id": file_id}))
                                 .ok();
                         }
                         ProgressEvent::Cancelled {

@@ -95,9 +95,11 @@ pub enum ProgressEvent {
         error: String,
     },
     Paused {
+        transfer_id: uuid::Uuid,
         reason: String,
     },
     Resumed {
+        transfer_id: uuid::Uuid,
         file_id: uuid::Uuid,
     },
     Cancelled {

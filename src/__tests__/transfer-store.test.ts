@@ -101,4 +101,28 @@ describe("TransferStore", () => {
     expect(useTransferStore.getState().active.size).toBe(0)
     expect(useTransferStore.getState().history[0].status).toBe("cancelled")
   })
+
+  it("updates queued transfer position", () => {
+    useTransferStore.getState().addTransfer(mockTransfer)
+    useTransferStore.getState().queueTransfer("t-1", 2)
+
+    const transfer = useTransferStore.getState().active.get("t-1")
+    expect(transfer?.status).toBe("queued")
+    expect(transfer?.queuePosition).toBe(2)
+    expect(transfer?.files[0]?.status).toBe("queued")
+  })
+
+  it("pauses and resumes a transfer", () => {
+    useTransferStore.getState().addTransfer(mockTransfer)
+    useTransferStore.getState().pauseTransfer("t-1", "user")
+
+    let transfer = useTransferStore.getState().active.get("t-1")
+    expect(transfer?.status).toBe("paused")
+    expect(transfer?.pauseReason).toBe("user")
+
+    useTransferStore.getState().resumeTransfer("t-1")
+    transfer = useTransferStore.getState().active.get("t-1")
+    expect(transfer?.status).toBe("transferring")
+    expect(transfer?.pauseReason).toBeUndefined()
+  })
 })

@@ -4,6 +4,7 @@ import { useSettingsStore } from "@/stores/settings-store"
 import { useChatStore } from "@/stores/chat-store"
 import { isTauri } from "./use-tauri-event"
 import type { IncomingTransfer } from "@/types"
+import { useConnectionStore } from "@/stores/connection-store"
 
 type PendingWebFile = { id: string; file: File; name: string; size: number; mimeType: string }
 type PendingWebOffer = {
@@ -25,6 +26,12 @@ export function useWebRelay() {
   const setDevices = useDeviceStore((s) => s.setDevices)
   const setStatus = useDeviceStore((s) => s.setStatus)
   const localName = useDeviceStore((s) => s.localName)
+  const setRelayTarget = useConnectionStore((s) => s.setRelayTarget)
+  const markConnecting = useConnectionStore((s) => s.markConnecting)
+  const markConnected = useConnectionStore((s) => s.markConnected)
+  const markDisconnected = useConnectionStore((s) => s.markDisconnected)
+  const markReconnectAttempt = useConnectionStore((s) => s.markReconnectAttempt)
+  const markError = useConnectionStore((s) => s.markError)
   const addMessage = useChatStore((s) => s.addMessage)
   const updateFileProgress = useChatStore((s) => s.updateFileProgress)
   const markFileStatus = useChatStore((s) => s.markFileStatus)
@@ -57,6 +64,8 @@ export function useWebRelay() {
 
   const connect = useCallback((url: string) => {
     if (!url.startsWith("ws://") && !url.startsWith("wss://")) return
+    setRelayTarget(url)
+    markConnecting(retryCountRef.current > 0)
     if (connectedRef.current) {
       wsRef.current?.close()
       connectedRef.current = false
@@ -79,6 +88,7 @@ export function useWebRelay() {
         device_type: "web",
       }))
       setStatus({ state: "relay" })
+      markConnected("Web 端已连接到中继")
       console.log("[relay] connected to", url)
     }
 
@@ -187,14 +197,17 @@ export function useWebRelay() {
       setStatus({ state: "offline" })
       wsRef.current = null
       connectedRef.current = false
+      markDisconnected("Web 端中继连接已断开")
       if (shouldReconnectRef.current) {
         const delay = Math.min(1000 * 2 ** retryCountRef.current, 30000)
         retryCountRef.current++
+        markReconnectAttempt(`连接已断开，${Math.ceil(delay / 1000)} 秒后重试`)
         retryRef.current = setTimeout(() => connect(url), delay)
       }
     }
 
     ws.onerror = () => {
+      markError("WebSocket 连接失败")
       ws.close()
     }
 
@@ -204,7 +217,7 @@ export function useWebRelay() {
         ws.send(JSON.stringify({ type: "ping" }))
       }
     }, 15000)
-  }, [addMessage, localName, markOfferStatus, setDevices, setStatus])
+  }, [addMessage, localName, markConnected, markConnecting, markDisconnected, markError, markOfferStatus, markReconnectAttempt, setDevices, setRelayTarget, setStatus])
 
   const handleRelayData = useCallback((sourceId: string, dataBase64: string) => {
     const raw = base64ToBytes(dataBase64)
@@ -371,13 +384,14 @@ export function useWebRelay() {
     if (relayUrl) {
       shouldReconnectRef.current = true
       retryCountRef.current = 0
+      setRelayTarget(relayUrl)
       connect(relayUrl)
     }
     return () => {
       delete (window as any).__RUST_SEND_WEB_RELAY__
       disconnect()
     }
-  }, [relayUrl, connect, disconnect, markOfferStatus])
+  }, [relayUrl, connect, disconnect, markOfferStatus, setRelayTarget])
 
   return { connect, disconnect }
 }

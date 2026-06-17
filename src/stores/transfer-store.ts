@@ -12,9 +12,13 @@ interface TransferState_ {
   incoming: IncomingTransfer | null
 
   addTransfer: (t: TransferState) => void
+  upsertTransfer: (t: TransferState) => void
   replaceActive: (transfers: TransferState[]) => void
   removeTransfer: (id: string) => void
   cancelTransfer: (id: string) => void
+  queueTransfer: (id: string, position: number) => void
+  pauseTransfer: (id: string, reason?: string) => void
+  resumeTransfer: (id: string) => void
   updateProgress: (p: TransferProgress) => void
   completeTransfer: (fileId: string) => void
   failTransfer: (fileId: string, error: string) => void
@@ -31,13 +35,24 @@ export const useTransferStore = create<TransferState_>((set, get) => ({
 
   addTransfer: (t) => {
     const active = new Map(get().active)
-    active.set(t.id, t)
+    active.set(t.id, cloneTransfer(t))
+    set({ active })
+  },
+
+  upsertTransfer: (t) => {
+    const active = new Map(get().active)
+    const previous = active.get(t.id)
+    active.set(t.id, {
+      ...previous,
+      ...cloneTransfer(t),
+      files: t.files.map((file) => ({ ...file })),
+    })
     set({ active })
   },
 
   replaceActive: (transfers) =>
     set({
-      active: new Map(transfers.map((transfer) => [transfer.id, transfer])),
+      active: new Map(transfers.map((transfer) => [transfer.id, cloneTransfer(transfer)])),
     }),
 
   removeTransfer: (id) => {
@@ -70,6 +85,61 @@ export const useTransferStore = create<TransferState_>((set, get) => ({
     set({ active })
   },
 
+  queueTransfer: (id, position) => {
+    const active = new Map(get().active)
+    const transfer = active.get(id)
+    if (!transfer) return
+
+    active.set(id, {
+      ...transfer,
+      status: "queued",
+      queuePosition: position,
+      files: transfer.files.map((file) => ({
+        ...file,
+        status: file.status === "completed" ? file.status : "queued",
+        speed: 0,
+      })),
+    })
+    set({ active })
+  },
+
+  pauseTransfer: (id, reason = "user") => {
+    const active = new Map(get().active)
+    const transfer = active.get(id)
+    if (!transfer) return
+
+    active.set(id, {
+      ...transfer,
+      status: "paused",
+      pauseReason: reason as TransferState["pauseReason"],
+      files: transfer.files.map((file) => ({
+        ...file,
+        status: file.status === "completed" ? file.status : "paused",
+        speed: 0,
+      })),
+    })
+    set({ active })
+  },
+
+  resumeTransfer: (id) => {
+    const active = new Map(get().active)
+    const transfer = active.get(id)
+    if (!transfer) return
+
+    active.set(id, {
+      ...transfer,
+      status: "transferring",
+      pauseReason: undefined,
+      queuePosition: undefined,
+      files: transfer.files.map((file) => ({
+        ...file,
+        status:
+          file.status === "completed" ? file.status : file.bytesSent > 0 ? "transferring" : "queued",
+      })),
+    })
+    set({ active })
+  },
+
   updateProgress: (p) => {
     const active = new Map(get().active)
     const transfer = active.get(p.transferId)
@@ -80,7 +150,12 @@ export const useTransferStore = create<TransferState_>((set, get) => ({
         ? { ...f, bytesSent: p.bytesSent, speed: p.speed, status: "transferring" }
         : f
     )
-    active.set(p.transferId, { ...transfer })
+    active.set(p.transferId, {
+      ...transfer,
+      status: "transferring",
+      pauseReason: undefined,
+      queuePosition: undefined,
+    })
     set({ active })
   },
 
@@ -149,3 +224,10 @@ export const useTransferStore = create<TransferState_>((set, get) => ({
 
   clearHistory: () => set({ history: [] }),
 }))
+
+function cloneTransfer(transfer: TransferState): TransferState {
+  return {
+    ...transfer,
+    files: transfer.files.map((file) => ({ ...file })),
+  }
+}

@@ -47,6 +47,7 @@ export interface TransferState {
   startedAt: string
   status: TransferStatus
   pauseReason?: "user" | "network" | "disk_full"
+  queuePosition?: number
 }
 
 export interface TransferRecord {

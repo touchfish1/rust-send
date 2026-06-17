@@ -16,6 +16,7 @@ import { isTauri } from "@/hooks/use-tauri-event"
 import { saveWebDeviceName } from "@/hooks/use-local-device-info"
 import { checkForUpdates, downloadAndInstallUpdate } from "@/services/update-service"
 import type { DeviceInfo } from "@/types"
+import { useConnectionStore } from "@/stores/connection-store"
 
 function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -71,9 +72,19 @@ export function SettingsPage() {
   const devices = useDeviceStore((s) => s.devices)
   const recentDevices = useDeviceStore((s) => s.recentDevices)
   const trustedDeviceIds = useDeviceStore((s) => s.trustedDeviceIds)
+  const connectionStatus = useDeviceStore((s) => s.status)
   const setLocalInfo = useDeviceStore((s) => s.setLocalInfo)
   const toggleTrustedDevice = useDeviceStore((s) => s.toggleTrustedDevice)
   const clearTrustedDevices = useDeviceStore((s) => s.clearTrustedDevices)
+  const connectionPhase = useConnectionStore((s) => s.phase)
+  const diagnosticsRelayUrl = useConnectionStore((s) => s.relayUrl)
+  const reconnectAttempts = useConnectionStore((s) => s.reconnectAttempts)
+  const lastConnectedAt = useConnectionStore((s) => s.lastConnectedAt)
+  const lastDisconnectedAt = useConnectionStore((s) => s.lastDisconnectedAt)
+  const lastError = useConnectionStore((s) => s.lastError)
+  const lastErrorAt = useConnectionStore((s) => s.lastErrorAt)
+  const lastEvent = useConnectionStore((s) => s.lastEvent)
+  const lastEventAt = useConnectionStore((s) => s.lastEventAt)
   const currentVersion = useUpdateStore((s) => s.currentVersion)
   const latestVersion = useUpdateStore((s) => s.latestVersion)
   const latestNotes = useUpdateStore((s) => s.latestNotes)
@@ -206,6 +217,9 @@ export function SettingsPage() {
     () => buildKnownDevices(Array.from(devices.values()), recentDevices, trustedDeviceIds),
     [devices, recentDevices, trustedDeviceIds]
   )
+  const onlineDeviceCount = devices.size
+  const diagnosticTransport =
+    connectionStatus.state === "relay" ? "relay" : onlineDeviceCount > 0 ? "lan" : "offline"
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col p-6 sm:p-8 animate-page-rise">
@@ -280,6 +294,61 @@ export function SettingsPage() {
 
           <SettingsRow label="局域网自动接收" description="开启后局域网设备发来的文件自动保存">
             <Switch checked={autoAcceptLan} onCheckedChange={setAutoAcceptLan} />
+          </SettingsRow>
+        </SettingsSection>
+
+        <SettingsSection title="连接诊断">
+          <SettingsRow label="实时状态" description="帮助判断当前是局域网直连、中继连接，还是处于重试与异常状态">
+            <div className="flex w-full flex-col gap-3 sm:min-w-[360px]">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={diagnosticBadgeVariant(diagnosticTransport, connectionPhase)}>
+                  {diagnosticTransportLabel(diagnosticTransport, connectionPhase)}
+                </Badge>
+                {reconnectAttempts > 0 && (
+                  <Badge variant="outline">已重试 {reconnectAttempts} 次</Badge>
+                )}
+                {trustedDeviceIds.length > 0 && (
+                  <Badge variant="outline">可信设备 {trustedDeviceIds.length}</Badge>
+                )}
+              </div>
+
+              <div className="rounded-sm border border-border/40 bg-muted/35 px-3 py-3">
+                <div className="text-sm font-medium text-foreground/85">{lastEvent || "等待连接"}</div>
+                {lastEventAt && (
+                  <div className="mt-1 text-xs text-muted-foreground/60">
+                    最近更新于 {formatDateTime(lastEventAt)}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <DiagnosticItem label="在线设备" value={`${onlineDeviceCount} 台`} />
+                <DiagnosticItem
+                  label="中继地址"
+                  value={diagnosticsRelayUrl || relayUrl || "未配置"}
+                  monospace
+                />
+                <DiagnosticItem
+                  label="最近连通"
+                  value={lastConnectedAt ? formatDateTime(lastConnectedAt) : "本次会话暂无"}
+                />
+                <DiagnosticItem
+                  label="最近断开"
+                  value={lastDisconnectedAt ? formatDateTime(lastDisconnectedAt) : "暂无"}
+                />
+              </div>
+
+              {lastError && (
+                <div className="rounded-sm border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">
+                  最近错误：{lastError}
+                  {lastErrorAt && ` · ${formatDateTime(lastErrorAt)}`}
+                </div>
+              )}
+
+              <div className="rounded-sm border border-border/40 bg-background/70 px-3 py-2.5 text-xs leading-6 text-muted-foreground/70">
+                {diagnosticHint(diagnosticTransport, connectionPhase, onlineDeviceCount, Boolean(lastError))}
+              </div>
+            </div>
           </SettingsRow>
         </SettingsSection>
 
@@ -497,4 +566,82 @@ function getTimestamp(value?: string) {
   if (!value) return 0
   const timestamp = Date.parse(value)
   return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function DiagnosticItem({
+  label,
+  value,
+  monospace = false,
+}: {
+  label: string
+  value: string
+  monospace?: boolean
+}) {
+  return (
+    <div className="rounded-sm border border-border/35 bg-background/70 px-3 py-2.5">
+      <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/55">{label}</div>
+      <div className={`mt-1 text-sm text-foreground/85 ${monospace ? "break-all font-mono text-xs" : ""}`}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function diagnosticTransportLabel(
+  transport: "relay" | "lan" | "offline",
+  phase: "idle" | "connecting" | "connected" | "reconnecting" | "error"
+) {
+  if (phase === "connecting") return "连接中"
+  if (phase === "reconnecting") return "重连中"
+  if (phase === "error") return "连接异常"
+  if (transport === "relay") return "中继在线"
+  if (transport === "lan") return "局域网可用"
+  return "当前离线"
+}
+
+function diagnosticBadgeVariant(
+  transport: "relay" | "lan" | "offline",
+  phase: "idle" | "connecting" | "connected" | "reconnecting" | "error"
+) {
+  if (phase === "error") return "destructive" as const
+  if (phase === "connecting" || phase === "reconnecting") return "warning" as const
+  if (transport === "relay" || transport === "lan") return "success" as const
+  return "outline" as const
+}
+
+function diagnosticHint(
+  transport: "relay" | "lan" | "offline",
+  phase: "idle" | "connecting" | "connected" | "reconnecting" | "error",
+  onlineDeviceCount: number,
+  hasError: boolean
+) {
+  if (phase === "reconnecting") {
+    return "中继连接正在自动恢复中。若长时间没有恢复，先检查中继地址与网络可达性。"
+  }
+  if (phase === "connecting") {
+    return "正在尝试建立中继连接，成功后外网设备也可以被发现。"
+  }
+  if (phase === "error" || hasError) {
+    return "最近一次连接出现异常，建议优先核对中继地址、网络代理和防火墙设置。"
+  }
+  if (transport === "relay") {
+    return "当前已经连上中继，跨网络设备应可见；若局域网内设备也在线，仍会优先走本地链路。"
+  }
+  if (transport === "lan" && onlineDeviceCount > 0) {
+    return "当前已发现局域网设备，说明本地发现链路正常；如需跨网络传输，可再接入中继。"
+  }
+  return "目前既没有连上中继，也没有发现可用局域网设备，可以先检查网络环境或稍后重试。"
+}
+
+function formatDateTime(iso: string) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
 }

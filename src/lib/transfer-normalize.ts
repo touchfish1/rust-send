@@ -78,5 +78,9 @@ export function normalizeTransferState(state: Record<string, any>): TransferStat
     startedAt: String(state.startedAt || state.started_at || new Date().toISOString()),
     status: normalizeTransferStatus(String(state.status || "queued")),
     pauseReason: state.pauseReason || state.pause_reason || undefined,
+    queuePosition:
+      typeof (state.queuePosition ?? state.queue_position) === "number"
+        ? Number(state.queuePosition ?? state.queue_position)
+        : undefined,
   }
 }

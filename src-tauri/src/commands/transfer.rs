@@ -2,6 +2,7 @@ use crate::core::file::{FileMeta, TransferRecord, TransferState};
 use crate::core::peer::PeerHandle;
 use crate::{AppState, PendingOutgoingTransfer};
 use tauri::State;
+use tauri::Emitter;
 
 #[tauri::command]
 pub async fn send_files(
@@ -94,6 +95,7 @@ pub struct FileInfo {
 
 #[tauri::command]
 pub async fn accept_transfer(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     source_id: String,
     source_name: Option<String>,
@@ -141,7 +143,16 @@ pub async fn accept_transfer(
     };
 
     let mut engine = state.engine.lock().await;
-    engine.start_receive(peer, source_name, file_metas, save_dir.into());
+    let transfer_id = engine.start_receive(peer, source_name, file_metas, save_dir.into());
+    let transfer_state = engine
+        .active_transfers()
+        .into_iter()
+        .find(|transfer| transfer.id == transfer_id);
+    drop(engine);
+
+    if let Some(transfer_state) = transfer_state {
+        let _ = app.emit("transfer:state", &transfer_state);
+    }
 
     tracing::info!("accept_transfer: source={} offer={}", source, offer_id);
     Ok(())

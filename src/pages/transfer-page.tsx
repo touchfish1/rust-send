@@ -167,11 +167,15 @@ export function TransferPage() {
                     {t.status === "paused" && (
                       <div className="mt-3">
                         <Progress value={pct} variant="warning" size="sm" />
-                        <div className="mt-1.5 text-xs text-warning/80">已暂停</div>
+                        <div className="mt-1.5 text-xs text-warning/80">
+                          已暂停{t.pauseReason ? ` · ${humanizePauseReason(t.pauseReason)}` : ""}
+                        </div>
                       </div>
                     )}
                     {t.status === "queued" && (
-                      <div className="mt-1.5 text-xs text-muted-foreground/60">排队中</div>
+                      <div className="mt-1.5 text-xs text-muted-foreground/60">
+                        排队中{typeof t.queuePosition === "number" && t.queuePosition > 0 ? ` · 前方还有 ${Math.max(t.queuePosition - 1, 0)} 个任务` : ""}
+                      </div>
                     )}
                   </div>
                   <div className="flex gap-1 shrink-0">
@@ -257,6 +261,11 @@ export function TransferPage() {
                       {humanizeFailureReason(r.failureReason)}
                     </div>
                   )}
+                  {(r.status === "failed" || r.status === "cancelled") && (
+                    <div className="mt-2 text-xs text-muted-foreground/60">
+                      {recoveryHint(r.failureReason)}
+                    </div>
+                  )}
                 </div>
                 {r.status === "failed" && (
                   <Button variant="ghost" size="sm" roundness="sharp" className="text-xs h-auto py-0.5">重试</Button>
@@ -327,12 +336,58 @@ function humanizeFailureReason(reason: string) {
   switch (reason) {
     case "user_cancelled":
       return "已手动取消"
+    case "paused then cancelled":
+      return "传输暂停后已取消"
     case "rejected":
       return "对方拒绝了本次传输"
     case "expired":
       return "传输请求已过期"
     case "unavailable":
       return "文件或目标设备当前不可用"
+    case "relay not connected":
+      return "中继未连接，当前无法继续传输"
+    case "relay disconnected":
+      return "中继连接已断开，传输被中断"
+    case "channel closed":
+      return "连接通道已关闭，传输被中断"
+    case "checksum_mismatch":
+      return "文件校验失败，传输结果不可信"
+    case "data channel closed":
+      return "接收通道已关闭，未能继续接收文件"
+    default:
+      return reason
+  }
+}
+
+function recoveryHint(reason?: string) {
+  switch (reason) {
+    case "user_cancelled":
+    case "paused then cancelled":
+      return "如果仍需要这批文件，可以重新发起一次传输。"
+    case "relay not connected":
+    case "relay disconnected":
+    case "channel closed":
+    case "data channel closed":
+      return "建议先确认网络或中继状态恢复正常，再重新尝试。"
+    case "checksum_mismatch":
+      return "建议重新发送文件，避免使用这次可能损坏的结果。"
+    case "expired":
+      return "需要让发送方重新发起一次新的文件请求。"
+    case "rejected":
+      return "可以与对方确认后重新发起，或改为其他设备接收。"
+    default:
+      return "可以稍后重试，若问题持续出现，再检查网络、磁盘空间或目标设备状态。"
+  }
+}
+
+function humanizePauseReason(reason: string) {
+  switch (reason) {
+    case "user":
+      return "手动暂停"
+    case "network":
+      return "网络原因"
+    case "disk_full":
+      return "磁盘空间不足"
     default:
       return reason
   }
