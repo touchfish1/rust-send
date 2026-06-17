@@ -35,11 +35,14 @@ export type TransferStatus =
   | "cancelled"
   | "expired"
 
+export type TransferTransport = "lan" | "relay" | "hybrid" | "unknown"
+
 export interface TransferState {
   id: string
   direction: "send" | "receive"
   peerId: string
   peerName: string
+  transport?: TransferTransport
   files: FileProgress[]
   startedAt: string
   status: TransferStatus
@@ -49,12 +52,15 @@ export interface TransferState {
 export interface TransferRecord {
   id: string
   direction: "send" | "receive"
+  peerId?: string
   peerName: string
+  transport?: TransferTransport
   fileNames: string[]
   totalSize: number
   startedAt: string
   completedAt: string
   status: TransferStatus
+  failureReason?: string
 }
 
 export interface IncomingTransfer {

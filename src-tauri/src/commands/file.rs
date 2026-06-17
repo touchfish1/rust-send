@@ -1,5 +1,5 @@
-use crate::AppError;
 use crate::core::file::FileMeta;
+use crate::AppError;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::Window;

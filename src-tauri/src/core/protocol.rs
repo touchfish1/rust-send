@@ -9,7 +9,10 @@ pub enum SignalingMessage {
     #[serde(rename = "answer")]
     Answer { target_id: uuid::Uuid, sdp: String },
     #[serde(rename = "ice_candidate")]
-    IceCandidate { target_id: uuid::Uuid, candidate: String },
+    IceCandidate {
+        target_id: uuid::Uuid,
+        candidate: String,
+    },
 }
 
 /// DataChannel 消息
@@ -29,17 +32,31 @@ pub enum PeerMessage {
         relative_path: Option<String>,
     },
     #[serde(rename = "ack")]
-    Ack { file_id: uuid::Uuid, chunk_index: u32 },
+    Ack {
+        file_id: uuid::Uuid,
+        chunk_index: u32,
+    },
     #[serde(rename = "nack")]
-    Nack { file_id: uuid::Uuid, chunk_index: u32, reason: String },
+    Nack {
+        file_id: uuid::Uuid,
+        chunk_index: u32,
+        reason: String,
+    },
     #[serde(rename = "complete")]
-    Complete { file_id: uuid::Uuid, checksum: String },
+    Complete {
+        file_id: uuid::Uuid,
+        checksum: String,
+    },
     #[serde(rename = "complete_ack")]
     CompleteAck { file_id: uuid::Uuid },
     #[serde(rename = "batch_complete")]
     BatchComplete { transfer_id: uuid::Uuid },
     #[serde(rename = "error")]
-    Error { file_id: uuid::Uuid, code: String, message: String },
+    Error {
+        file_id: uuid::Uuid,
+        code: String,
+        message: String,
+    },
     #[serde(rename = "chunk_request")]
     ChunkRequest {
         transfer_id: uuid::Uuid,

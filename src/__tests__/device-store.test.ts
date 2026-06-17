@@ -21,6 +21,7 @@ describe("DeviceStore", () => {
       localId: "",
       localName: "",
       devices: new Map(),
+      recentDevices: [],
       status: { state: "offline" },
     })
   })
@@ -37,6 +38,7 @@ describe("DeviceStore", () => {
     const devices = useDeviceStore.getState().devices
     expect(devices.size).toBe(1)
     expect(devices.get("dev-1")?.name).toBe("MacBook Pro")
+    expect(useDeviceStore.getState().recentDevices[0]?.id).toBe("dev-1")
   })
 
   it("adds multiple devices", () => {
@@ -52,6 +54,7 @@ describe("DeviceStore", () => {
     const devices = useDeviceStore.getState().devices
     expect(devices.size).toBe(1)
     expect(devices.has("dev-1")).toBe(false)
+    expect(useDeviceStore.getState().recentDevices.some((device) => device.id === "dev-1")).toBe(true)
   })
 
   it("replaces devices via setDevices", () => {
@@ -60,10 +63,18 @@ describe("DeviceStore", () => {
     const devices = useDeviceStore.getState().devices
     expect(devices.size).toBe(1)
     expect(devices.get("dev-2")?.name).toBe("Linux-PC")
+    expect(useDeviceStore.getState().recentDevices.length).toBe(2)
   })
 
   it("updates connection status", () => {
     useDeviceStore.getState().setStatus({ state: "lan" })
     expect(useDeviceStore.getState().status.state).toBe("lan")
+  })
+
+  it("clears recent devices", () => {
+    useDeviceStore.getState().addDevice(mockDevice)
+    expect(useDeviceStore.getState().recentDevices.length).toBe(1)
+    useDeviceStore.getState().clearRecentDevices()
+    expect(useDeviceStore.getState().recentDevices.length).toBe(0)
   })
 })

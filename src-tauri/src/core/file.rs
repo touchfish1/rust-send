@@ -24,6 +24,7 @@ pub struct TransferState {
     pub direction: Direction,
     pub peer_id: uuid::Uuid,
     pub peer_name: String,
+    pub transport: TransferTransport,
     pub files: Vec<FileProgress>,
     pub started_at: chrono::DateTime<chrono::Utc>,
     pub status: TransferStatus,
@@ -33,18 +34,28 @@ pub struct TransferState {
 pub struct TransferRecord {
     pub id: uuid::Uuid,
     pub direction: Direction,
+    pub peer_id: uuid::Uuid,
     pub peer_name: String,
+    pub transport: TransferTransport,
     pub file_names: Vec<String>,
     pub total_size: u64,
     pub started_at: chrono::DateTime<chrono::Utc>,
     pub completed_at: chrono::DateTime<chrono::Utc>,
     pub status: TransferStatus,
+    pub failure_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Direction {
     Send,
     Receive,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum TransferTransport {
+    Lan,
+    Relay,
+    Hybrid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

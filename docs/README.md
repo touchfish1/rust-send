@@ -15,5 +15,6 @@
 | [task-plan.md](./task-plan.md) | **历史实施计划:** 早期完整任务拆解与阶段依赖，适合作为背景参考，不再作为当前主计划入口 |
 | [aesthetics.md](./aesthetics.md) | **中国水墨风格**: 色彩系统（宣纸/墨/朱砂/青绿/赭石）、字体层级、布局间距、圆角边框、阴影、图标、动画、Logo、shadcn HSL 覆盖 |
 | [release.md](./release.md) | GitHub Actions 自动打包 Windows / macOS / Linux，并生成 GitHub Release 草稿 |
+| [testing.md](./testing.md) | **测试与 CI:** 前端单测、Rust 工作区测试、本地运行方式、GitHub Actions 持续集成说明 |
 | [architecture.md](./architecture.md) | 技术栈、项目结构、架构图 |
 | [components.md](./components.md) | 前端技术栈、shadcn 组件清单、设计系统 |

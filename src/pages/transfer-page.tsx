@@ -2,7 +2,7 @@ import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { useTransferStore } from "@/stores/transfer-store"
 import { useChatStore } from "@/stores/chat-store"
-import { formatFileSize, formatSpeed, formatTime, getFileIcon } from "@/lib/utils"
+import { cn, formatFileSize, formatRelativeTime, formatSpeed, formatTime, getFileIcon } from "@/lib/utils"
 import { useCallback, useMemo } from "react"
 import type { ChatMessage, TransferRecord } from "@/types"
 import type { CSSProperties } from "react"
@@ -40,6 +40,15 @@ function progressVariant(status: string): "default" | "warning" | "success" | "e
   if (status === "failed") return "error"
   if (status === "completed") return "success"
   return "default"
+}
+
+function transportLabel(transport?: string): string {
+  switch (transport) {
+    case "lan": return "局域网"
+    case "relay": return "中继"
+    case "hybrid": return "混合"
+    default: return "未知链路"
+  }
 }
 
 export function TransferPage() {
@@ -238,7 +247,16 @@ export function TransferPage() {
                     <span className="truncate font-medium">{r.fileNames.join(", ")}</span>
                     <span className="shrink-0 text-xs text-muted-foreground/60">{formatFileSize(r.totalSize)}</span>
                   </div>
-                  <div className="mt-1 text-xs text-muted-foreground/40">{formatTime(r.completedAt)}</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/45">
+                    <span>结束于 {formatTime(r.completedAt)} · {formatRelativeTime(r.completedAt)}</span>
+                    <span>{transportLabel(r.transport)}</span>
+                    {r.peerId && <span className="font-mono">{shortId(r.peerId)}</span>}
+                  </div>
+                  {r.failureReason && (
+                    <div className="mt-2 rounded-sm border border-destructive/15 bg-destructive/5 px-2.5 py-2 text-xs text-destructive/80">
+                      {humanizeFailureReason(r.failureReason)}
+                    </div>
+                  )}
                 </div>
                 {r.status === "failed" && (
                   <Button variant="ghost" size="sm" roundness="sharp" className="text-xs h-auto py-0.5">重试</Button>
@@ -285,7 +303,9 @@ function buildChatFileHistory(messages: ChatMessage[]): TransferRecord[] {
       return {
         id: message.id,
         direction: message.direction === "incoming" ? "receive" : "send",
+        peerId: message.peerId,
         peerName: message.peerName,
+        transport: "unknown",
         fileNames: files.map((file) => file.name),
         totalSize: files.reduce((sum, file) => sum + file.size, 0),
         startedAt: message.createdAt,
@@ -299,6 +319,21 @@ function isExpired(expiresAt?: string) {
   return Boolean(expiresAt && Date.now() >= Date.parse(expiresAt))
 }
 
-function cn(...classes: (string | undefined | false | null)[]): string {
-  return classes.filter(Boolean).join(" ")
+function shortId(value: string) {
+  return value.length > 14 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value
+}
+
+function humanizeFailureReason(reason: string) {
+  switch (reason) {
+    case "user_cancelled":
+      return "已手动取消"
+    case "rejected":
+      return "对方拒绝了本次传输"
+    case "expired":
+      return "传输请求已过期"
+    case "unavailable":
+      return "文件或目标设备当前不可用"
+    default:
+      return reason
+  }
 }

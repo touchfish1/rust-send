@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { formatRelativeTime } from "@/lib/utils"
 import type { DeviceInfo } from "@/types"
 import type { CSSProperties } from "react"
 import { Badge } from "@/components/ui/badge"
@@ -7,6 +8,7 @@ interface SidebarProps {
   localName: string
   connectionStatus: "lan" | "relay" | "offline"
   devices: DeviceInfo[]
+  recentDevices: DeviceInfo[]
   activeDeviceId?: string
   onSelectDevice: (id: string) => void
   onNavigate: (page: string) => void
@@ -42,12 +44,15 @@ export function Sidebar({
   localName,
   connectionStatus,
   devices,
+  recentDevices,
   activeDeviceId,
   onSelectDevice,
   onNavigate,
   currentPage,
   updateAvailable = false,
 }: SidebarProps) {
+  const offlineRecentDevices = recentDevices.filter((device) => !devices.some((online) => online.id === device.id))
+
   return (
     <aside className="flex w-72 flex-col border-r border-border/50 bg-muted/30 backdrop-blur-sm animate-ink-slide">
       {/* 设备信息 */}
@@ -72,52 +77,57 @@ export function Sidebar({
           设备 · {devices.length}
         </div>
 
-        {devices.length === 0 ? (
+        {devices.length === 0 && offlineRecentDevices.length === 0 ? (
           <div className="px-4 py-8 text-center text-xs text-muted-foreground/60">
             <div className="mb-2 text-lg">📡</div>
             <div>未发现设备</div>
             <div className="mt-1">确保在同一网络或连接中继</div>
           </div>
         ) : (
-          <div className="space-y-1 px-2">
-            {devices.map((device, index) => (
-              <button
-                key={device.id}
-                onClick={() => onSelectDevice(device.id)}
-                style={{ "--stagger-delay": `${80 + index * 40}ms` } as CSSProperties}
-                className={cn(
-                  "group motion-stagger relative flex w-full items-center gap-3 overflow-hidden rounded-md px-3 py-2.5 text-left text-sm outline-none transition-[transform,background-color,color,box-shadow] duration-300 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-0",
-                  activeDeviceId === device.id
-                    ? "bg-accent/10 text-foreground shadow-[0_12px_24px_-22px_hsl(var(--primary)/0.9)]"
-                    : "text-foreground/70 hover:bg-muted/60 hover:text-foreground"
-                )}
-              >
-                <span
-                  className={cn(
-                    "absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary/70 transition-all duration-300",
-                    activeDeviceId === device.id ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2"
-                  )}
-                />
-                <DeviceIcon type={device.deviceType} />
-                <div className="flex flex-col min-w-0 flex-1">
-                  <span className="truncate font-medium">{device.name}</span>
-                  {(!device.status || device.status === "offline") && device.lastSeen && (
-                    <span className="text-xs text-muted-foreground/60">
-                      上次活跃: {device.lastSeen}
-                    </span>
-                  )}
+          <div className="space-y-3 px-2">
+            {devices.length > 0 && (
+              <div>
+                <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/55">
+                  当前在线
                 </div>
-                <DeviceStatusDot
-                  status={
-                    device.status === "online"
-                      ? "lan"
-                      : device.status === "relay"
-                      ? "relay"
-                      : "offline"
-                  }
-                />
-              </button>
-            ))}
+                <div className="space-y-1">
+                  {devices.map((device, index) => (
+                    <DeviceListItem
+                      key={device.id}
+                      device={device}
+                      activeDeviceId={activeDeviceId}
+                      index={index}
+                      onSelectDevice={onSelectDevice}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {offlineRecentDevices.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between px-2 pb-1">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/55">
+                    最近设备
+                  </div>
+                  <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                    {offlineRecentDevices.length}
+                  </Badge>
+                </div>
+                <div className="space-y-1">
+                  {offlineRecentDevices.map((device, index) => (
+                    <DeviceListItem
+                      key={device.id}
+                      device={device}
+                      activeDeviceId={activeDeviceId}
+                      index={devices.length + index}
+                      onSelectDevice={onSelectDevice}
+                      recent
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -162,5 +172,59 @@ export function Sidebar({
         </button>
       </div>
     </aside>
+  )
+}
+
+function DeviceListItem({
+  device,
+  activeDeviceId,
+  index,
+  onSelectDevice,
+  recent = false,
+}: {
+  device: DeviceInfo
+  activeDeviceId?: string
+  index: number
+  onSelectDevice: (id: string) => void
+  recent?: boolean
+}) {
+  const status =
+    device.status === "online"
+      ? "lan"
+      : device.status === "relay"
+      ? "relay"
+      : "offline"
+
+  return (
+    <button
+      onClick={() => onSelectDevice(device.id)}
+      style={{ "--stagger-delay": `${80 + index * 40}ms` } as CSSProperties}
+      className={cn(
+        "group motion-stagger relative flex w-full items-center gap-3 overflow-hidden rounded-md px-3 py-2.5 text-left text-sm outline-none transition-[transform,background-color,color,box-shadow] duration-300 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-0",
+        activeDeviceId === device.id
+          ? "bg-accent/10 text-foreground shadow-[0_12px_24px_-22px_hsl(var(--primary)/0.9)]"
+          : "text-foreground/70 hover:bg-muted/60 hover:text-foreground"
+      )}
+    >
+      <span
+        className={cn(
+          "absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary/70 transition-all duration-300",
+          activeDeviceId === device.id ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2"
+        )}
+      />
+      <DeviceIcon type={device.deviceType} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-center gap-2">
+          <span className="truncate font-medium">{device.name}</span>
+          {recent && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">最近</Badge>}
+        </div>
+        {device.lastSeen && (
+          <span className="text-xs text-muted-foreground/60">
+            {status === "offline" ? "上次活跃" : "刚刚同步"} · {formatRelativeTime(device.lastSeen)}
+          </span>
+        )}
+      </div>
+      <DeviceStatusDot status={status} />
+    </button>
   )
 }

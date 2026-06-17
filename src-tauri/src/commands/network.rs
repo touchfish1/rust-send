@@ -1,6 +1,6 @@
+use crate::core::peer::PeerHandle;
 use crate::relay::client::{RelayClient, RelayEvent};
 use crate::AppState;
-use crate::core::peer::PeerHandle;
 use bytes::Bytes;
 use std::sync::Arc;
 use tauri::{Emitter, State};
@@ -83,9 +83,13 @@ pub async fn send_chat_message(
 /// 公开给 lib.rs 自动连接时使用
 pub async fn process_relay_events_internal(
     mut event_rx: tokio::sync::mpsc::Receiver<RelayEvent>,
-    data_channels: Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, tokio::sync::mpsc::Sender<Bytes>>>>,
+    data_channels: Arc<
+        tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, tokio::sync::mpsc::Sender<Bytes>>>,
+    >,
     engine: Arc<tokio::sync::Mutex<crate::transfer::engine::TransferEngine>>,
-    pending_outgoing: Arc<tokio::sync::Mutex<std::collections::HashMap<String, crate::PendingOutgoingTransfer>>>,
+    pending_outgoing: Arc<
+        tokio::sync::Mutex<std::collections::HashMap<String, crate::PendingOutgoingTransfer>>,
+    >,
     relay_client: Arc<tokio::sync::Mutex<Option<Arc<RelayClient>>>>,
     app_handle: tauri::AppHandle,
     local_device_id: uuid::Uuid,
@@ -96,7 +100,8 @@ pub async fn process_relay_events_internal(
                 let _ = app_handle.emit("connection:state", serde_json::json!({"state": "relay"}));
             }
             RelayEvent::Disconnected => {
-                let _ = app_handle.emit("connection:state", serde_json::json!({"state": "offline"}));
+                let _ =
+                    app_handle.emit("connection:state", serde_json::json!({"state": "offline"}));
             }
             RelayEvent::DeviceList(devices) => {
                 for device in devices {
@@ -107,7 +112,13 @@ pub async fn process_relay_events_internal(
                     let _ = app_handle.emit("device:discovered", &device);
                 }
             }
-            RelayEvent::TransferRequest { source_id, source_name, offer_id, expires_at, files } => {
+            RelayEvent::TransferRequest {
+                source_id,
+                source_name,
+                offer_id,
+                expires_at,
+                files,
+            } => {
                 let incoming = serde_json::json!({
                     "sourceId": source_id,
                     "sourceName": source_name,
@@ -122,7 +133,11 @@ pub async fn process_relay_events_internal(
                 });
                 let _ = app_handle.emit("transfer:incoming", incoming);
             }
-            RelayEvent::TransferAccepted { target_id, offer_id, file_ids } => {
+            RelayEvent::TransferAccepted {
+                target_id,
+                offer_id,
+                file_ids,
+            } => {
                 let pending = {
                     let mut pending_map = pending_outgoing.lock().await;
                     if let Some(pending) = pending_map.get(&offer_id).cloned() {
@@ -164,9 +179,15 @@ pub async fn process_relay_events_internal(
 
                 if let Some(pending) = pending {
                     let requested = if file_ids.is_empty() {
-                        pending.files.iter().map(|file| file.id).collect::<std::collections::HashSet<_>>()
+                        pending
+                            .files
+                            .iter()
+                            .map(|file| file.id)
+                            .collect::<std::collections::HashSet<_>>()
                     } else {
-                        file_ids.into_iter().collect::<std::collections::HashSet<_>>()
+                        file_ids
+                            .into_iter()
+                            .collect::<std::collections::HashSet<_>>()
                     };
                     let mut files = Vec::new();
                     let mut paths = Vec::new();
@@ -194,20 +215,25 @@ pub async fn process_relay_events_internal(
                         client: pending.client,
                         peer_id: target_id,
                     };
-                    engine.lock().await.start_send(
-                        peer,
-                        pending.target_name,
-                        files,
-                        paths,
-                    );
+                    engine
+                        .lock()
+                        .await
+                        .start_send(peer, pending.target_name, files, paths);
                 }
             }
-            RelayEvent::TransferRejected { target_id, offer_id, reason } => {
-                let _ = app_handle.emit("transfer:offer_failed", serde_json::json!({
-                    "peerId": target_id,
-                    "offerId": offer_id,
-                    "reason": reason,
-                }));
+            RelayEvent::TransferRejected {
+                target_id,
+                offer_id,
+                reason,
+            } => {
+                let _ = app_handle.emit(
+                    "transfer:offer_failed",
+                    serde_json::json!({
+                        "peerId": target_id,
+                        "offerId": offer_id,
+                        "reason": reason,
+                    }),
+                );
             }
             RelayEvent::ChatMessage {
                 source_id,
@@ -216,13 +242,16 @@ pub async fn process_relay_events_internal(
                 text,
                 sent_at,
             } => {
-                let _ = app_handle.emit("chat:message", serde_json::json!({
-                    "id": message_id,
-                    "peerId": source_id,
-                    "peerName": source_name,
-                    "text": text,
-                    "createdAt": sent_at,
-                }));
+                let _ = app_handle.emit(
+                    "chat:message",
+                    serde_json::json!({
+                        "id": message_id,
+                        "peerId": source_id,
+                        "peerName": source_name,
+                        "text": text,
+                        "createdAt": sent_at,
+                    }),
+                );
             }
             RelayEvent::RelayData { file_id, data } => {
                 // 路由到接收器
@@ -231,20 +260,35 @@ pub async fn process_relay_events_internal(
                     let _ = tx.send(data).await;
                 }
             }
-            RelayEvent::Cancel { transfer_id, reason } => {
-                let _ = app_handle.emit("transfer:cancelled", serde_json::json!({
-                    "transfer_id": transfer_id, "reason": reason,
-                }));
+            RelayEvent::Cancel {
+                transfer_id,
+                reason,
+            } => {
+                let _ = app_handle.emit(
+                    "transfer:cancelled",
+                    serde_json::json!({
+                        "transfer_id": transfer_id, "reason": reason,
+                    }),
+                );
             }
-            RelayEvent::Pause { transfer_id, reason } => {
-                let _ = app_handle.emit("transfer:paused", serde_json::json!({
-                    "transfer_id": transfer_id, "reason": reason,
-                }));
+            RelayEvent::Pause {
+                transfer_id,
+                reason,
+            } => {
+                let _ = app_handle.emit(
+                    "transfer:paused",
+                    serde_json::json!({
+                        "transfer_id": transfer_id, "reason": reason,
+                    }),
+                );
             }
             RelayEvent::Resume { transfer_id } => {
-                let _ = app_handle.emit("transfer:resumed", serde_json::json!({
-                    "transfer_id": transfer_id,
-                }));
+                let _ = app_handle.emit(
+                    "transfer:resumed",
+                    serde_json::json!({
+                        "transfer_id": transfer_id,
+                    }),
+                );
             }
             RelayEvent::Signal { .. } => {}
             RelayEvent::ChunkRequest { .. } => {}

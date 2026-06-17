@@ -20,11 +20,16 @@ import { useUpdateStore } from "@/stores/update-store"
 import { extractRelayUrlFromLocation } from "@/lib/pairing"
 import { bootstrapUpdater, checkForUpdates } from "@/services/update-service"
 import { useToast } from "@/components/ui/toast"
+import {
+  normalizeTransferRecord,
+  normalizeTransferState,
+} from "@/lib/transfer-normalize"
 
 export default function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const devices = useDeviceStore((s) => s.devices)
+  const recentDevices = useDeviceStore((s) => s.recentDevices)
   const localName = useDeviceStore((s) => s.localName)
   const connectionStatus = useDeviceStore((s) => s.status)
   const incoming = useTransferStore((s) => s.incoming)
@@ -32,6 +37,8 @@ export default function App() {
   const setRelayUrl = useSettingsStore((s) => s.setRelayUrl)
   const autoCheckUpdates = useSettingsStore((s) => s.autoCheckUpdates)
   const updateAvailable = useUpdateStore((s) => !!s.latestVersion)
+  const replaceHistory = useTransferStore((s) => s.replaceHistory)
+  const replaceActive = useTransferStore((s) => s.replaceActive)
   const { toast } = useToast()
 
   useDeviceEvents()
@@ -39,6 +46,30 @@ export default function App() {
   useChatEvents()
   useLocalDeviceInfo()
   useAutoConnect()
+
+  useEffect(() => {
+    if (!isTauri()) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core")
+        const [history, active] = await Promise.all([
+          invoke<Record<string, unknown>[]>("get_history"),
+          invoke<Record<string, unknown>[]>("get_active_transfers"),
+        ])
+        if (cancelled) return
+        replaceHistory(history.map(normalizeTransferRecord))
+        replaceActive(active.map(normalizeTransferState))
+      } catch (error) {
+        console.warn("hydrate transfer store failed", error)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [replaceActive, replaceHistory])
 
   useEffect(() => {
     if (isTauri() || typeof window === "undefined") return
@@ -153,6 +184,7 @@ export default function App() {
           localName={localName || "rust-send"}
           connectionStatus={connectionStatus.state}
           devices={Array.from(devices.values())}
+          recentDevices={recentDevices}
           activeDeviceId={activeDeviceId}
           onSelectDevice={handleSelectDevice}
           onNavigate={handleNavigate}

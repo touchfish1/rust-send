@@ -39,9 +39,7 @@ pub async fn run_file_receive(
                 Ok(ControlSignal::Resume) => {
                     paused = false;
                     progress_tx
-                        .send(ProgressEvent::Resumed {
-                            file_id: meta.id,
-                        })
+                        .send(ProgressEvent::Resumed { file_id: meta.id })
                         .await
                         .ok();
                     continue;

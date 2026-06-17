@@ -1,7 +1,7 @@
-use tauri::State;
-use crate::AppState;
 use crate::core::device::{DeviceInfo, DeviceType};
+use crate::AppState;
 use std::net::IpAddr;
+use tauri::State;
 
 #[tauri::command]
 pub fn get_device_id(state: State<AppState>) -> String {

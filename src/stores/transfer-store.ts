@@ -12,6 +12,7 @@ interface TransferState_ {
   incoming: IncomingTransfer | null
 
   addTransfer: (t: TransferState) => void
+  replaceActive: (transfers: TransferState[]) => void
   removeTransfer: (id: string) => void
   cancelTransfer: (id: string) => void
   updateProgress: (p: TransferProgress) => void
@@ -19,6 +20,7 @@ interface TransferState_ {
   failTransfer: (fileId: string, error: string) => void
   setIncoming: (req: IncomingTransfer | null) => void
   addHistory: (record: TransferRecord) => void
+  replaceHistory: (records: TransferRecord[]) => void
   clearHistory: () => void
 }
 
@@ -33,6 +35,11 @@ export const useTransferStore = create<TransferState_>((set, get) => ({
     set({ active })
   },
 
+  replaceActive: (transfers) =>
+    set({
+      active: new Map(transfers.map((transfer) => [transfer.id, transfer])),
+    }),
+
   removeTransfer: (id) => {
     const active = new Map(get().active)
     active.delete(id)
@@ -43,8 +50,22 @@ export const useTransferStore = create<TransferState_>((set, get) => ({
     const active = new Map(get().active)
     const t = active.get(id)
     if (t) {
-      t.status = "cancelled"
-      active.set(id, { ...t })
+      const record: TransferRecord = {
+        id: t.id,
+        direction: t.direction,
+        peerId: t.peerId,
+        peerName: t.peerName,
+        transport: t.transport || "unknown",
+        fileNames: t.files.map((f) => f.fileName),
+        totalSize: t.files.reduce((s, f) => s + f.size, 0),
+        startedAt: t.startedAt,
+        completedAt: new Date().toISOString(),
+        status: "cancelled",
+        failureReason: "user_cancelled",
+      }
+      active.delete(id)
+      set({ active, history: [record, ...get().history] })
+      return
     }
     set({ active })
   },
@@ -74,7 +95,9 @@ export const useTransferStore = create<TransferState_>((set, get) => ({
         const record: TransferRecord = {
           id: t.id,
           direction: t.direction,
+          peerId: t.peerId,
           peerName: t.peerName,
+          transport: t.transport || "unknown",
           fileNames: t.files.map((f) => f.fileName),
           totalSize: t.files.reduce((s, f) => s + f.size, 0),
           startedAt: t.startedAt,
@@ -93,10 +116,27 @@ export const useTransferStore = create<TransferState_>((set, get) => ({
   failTransfer: (fileId, _error) => {
     const active = new Map(get().active)
     for (const [id, t] of active) {
+      const hasFile = t.files.some((f) => f.fileId === fileId)
+      if (!hasFile) continue
       t.files = t.files.map((f) =>
         f.fileId === fileId ? { ...f, status: "failed" as const } : f
       )
-      active.set(id, { ...t, status: "failed" })
+      const record: TransferRecord = {
+        id: t.id,
+        direction: t.direction,
+        peerId: t.peerId,
+        peerName: t.peerName,
+        transport: t.transport || "unknown",
+        fileNames: t.files.map((f) => f.fileName),
+        totalSize: t.files.reduce((s, f) => s + f.size, 0),
+        startedAt: t.startedAt,
+        completedAt: new Date().toISOString(),
+        status: "failed",
+        failureReason: _error,
+      }
+      active.delete(id)
+      set({ active: new Map(active), history: [record, ...get().history] })
+      return
     }
     set({ active: new Map(active) })
   },
@@ -104,6 +144,8 @@ export const useTransferStore = create<TransferState_>((set, get) => ({
   setIncoming: (req) => set({ incoming: req }),
 
   addHistory: (record) => set({ history: [record, ...get().history] }),
+
+  replaceHistory: (records) => set({ history: records }),
 
   clearHistory: () => set({ history: [] }),
 }))

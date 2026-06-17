@@ -74,7 +74,11 @@ pub async fn send_files(
         client,
         expires_at,
     };
-    state.pending_outgoing.lock().await.insert(offer_id.clone(), pending);
+    state
+        .pending_outgoing
+        .lock()
+        .await
+        .insert(offer_id.clone(), pending);
 
     tracing::info!("send_files offered: target={} offer={}", target, offer_id);
     Ok(())
@@ -151,10 +155,16 @@ pub async fn reject_transfer(
 ) -> Result<(), String> {
     let _source = uuid::Uuid::parse_str(&source_id).map_err(|e| e.to_string())?;
 
-        let relay = state.relay_client.lock().await;
-        if let Some(client) = relay.as_ref() {
-            client
-            .send_transfer_response(_source, offer_id.as_deref().unwrap_or_default(), false, &[], Some("rejected"))
+    let relay = state.relay_client.lock().await;
+    if let Some(client) = relay.as_ref() {
+        client
+            .send_transfer_response(
+                _source,
+                offer_id.as_deref().unwrap_or_default(),
+                false,
+                &[],
+                Some("rejected"),
+            )
             .ok();
     }
     drop(relay);
@@ -175,10 +185,7 @@ pub async fn cancel_transfer(
 }
 
 #[tauri::command]
-pub async fn pause_transfer(
-    state: State<'_, AppState>,
-    transfer_id: String,
-) -> Result<(), String> {
+pub async fn pause_transfer(state: State<'_, AppState>, transfer_id: String) -> Result<(), String> {
     let id = uuid::Uuid::parse_str(&transfer_id).map_err(|e| e.to_string())?;
     let mut engine = state.engine.lock().await;
     engine.pause(&id).map_err(|e| e.to_string())?;

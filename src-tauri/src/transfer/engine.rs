@@ -1,5 +1,5 @@
 use crate::core::file::{
-    Direction, FileMeta, FileProgress, ProgressEvent, TransferState, TransferStatus,
+    Direction, FileMeta, FileProgress, ProgressEvent, TransferRecord, TransferState, TransferStatus,
 };
 use crate::core::peer::PeerHandle;
 use crate::error::AppError;
@@ -77,7 +77,10 @@ impl TransferEngine {
         )
     }
 
-    pub fn set_data_channels(&mut self, channels: Arc<Mutex<HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>>) {
+    pub fn set_data_channels(
+        &mut self,
+        channels: Arc<Mutex<HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>>,
+    ) {
         self.data_channels = channels;
     }
 
@@ -132,6 +135,7 @@ impl TransferEngine {
                 direction: Direction::Send,
                 peer_id: peer.peer_id(),
                 peer_name,
+                transport: peer.transport(),
                 files: file_progress,
                 started_at: chrono::Utc::now(),
                 status: TransferStatus::Transferring,
@@ -159,7 +163,11 @@ impl TransferEngine {
                     client: client.clone(),
                     peer_id: *peer_id,
                 },
-                PeerHandle::Both { conn, client, peer_id } => PeerHandle::Both {
+                PeerHandle::Both {
+                    conn,
+                    client,
+                    peer_id,
+                } => PeerHandle::Both {
                     conn: conn.clone(),
                     client: client.clone(),
                     peer_id: *peer_id,
@@ -244,7 +252,11 @@ impl TransferEngine {
                     client: client.clone(),
                     peer_id: *peer_id,
                 },
-                PeerHandle::Both { conn, client, peer_id } => PeerHandle::Both {
+                PeerHandle::Both {
+                    conn,
+                    client,
+                    peer_id,
+                } => PeerHandle::Both {
                     conn: conn.clone(),
                     client: client.clone(),
                     peer_id: *peer_id,
@@ -265,14 +277,7 @@ impl TransferEngine {
 
             tokio::spawn(async move {
                 let result = crate::transfer::receiver::run_file_receive(
-                    id,
-                    &file_meta,
-                    &save_path,
-                    peer,
-                    chunk_size,
-                    cr,
-                    data_rx,
-                    pt,
+                    id, &file_meta, &save_path, peer, chunk_size, cr, data_rx, pt,
                 )
                 .await;
                 // 完成后取消注册
@@ -290,6 +295,7 @@ impl TransferEngine {
                 direction: Direction::Receive,
                 peer_id: peer.peer_id(),
                 peer_name,
+                transport: peer.transport(),
                 files: file_progress,
                 started_at: chrono::Utc::now(),
                 status: TransferStatus::Transferring,
@@ -348,41 +354,106 @@ impl TransferEngine {
     pub fn active_transfers(&self) -> Vec<TransferState> {
         let mut transfers: Vec<TransferState> =
             self.active.values().map(|t| t.state.clone()).collect();
-        transfers.extend(self.queue.iter().map(|q| TransferState {
-            id: q.id,
-            direction: q.direction.clone(),
-            peer_id: q.peer.peer_id(),
-            peer_name: q.peer_name.clone(),
-            files: q
-                .files
-                .iter()
-                .map(|f| FileProgress {
-                    file_id: f.id,
-                    file_name: f.name.clone(),
-                    size: f.size,
-                    bytes_sent: 0,
-                    speed: 0.0,
-                    status: TransferStatus::Queued,
-                })
-                .collect(),
-            started_at: chrono::Utc::now(),
-            status: TransferStatus::Queued,
+        transfers.extend(self.queue.iter().map(|q| {
+            TransferState {
+                id: q.id,
+                direction: q.direction.clone(),
+                peer_id: q.peer.peer_id(),
+                peer_name: q.peer_name.clone(),
+                transport: q.peer.transport(),
+                files: q
+                    .files
+                    .iter()
+                    .map(|f| FileProgress {
+                        file_id: f.id,
+                        file_name: f.name.clone(),
+                        size: f.size,
+                        bytes_sent: 0,
+                        speed: 0.0,
+                        status: TransferStatus::Queued,
+                    })
+                    .collect(),
+                started_at: chrono::Utc::now(),
+                status: TransferStatus::Queued,
+            }
         }));
         transfers
     }
 
     /// Route incoming relay data to the correct receiver
-    pub async fn route_incoming_data(
-        &self,
-        file_id: &uuid::Uuid,
-        data: Bytes,
-    ) -> Result<(), ()> {
+    pub async fn route_incoming_data(&self, file_id: &uuid::Uuid, data: Bytes) -> Result<(), ()> {
         let channels = self.data_channels.lock().await;
         if let Some(tx) = channels.get(file_id) {
             tx.send(data).await.map_err(|_| ())
         } else {
             Err(())
         }
+    }
+
+    pub fn mark_file_completed(
+        &mut self,
+        transfer_id: &uuid::Uuid,
+        file_id: &uuid::Uuid,
+    ) -> Option<TransferRecord> {
+        let task = self.active.get_mut(transfer_id)?;
+        for file in &mut task.state.files {
+            if file.file_id == *file_id {
+                file.bytes_sent = file.size;
+                file.speed = 0.0;
+                file.status = TransferStatus::Completed;
+            }
+        }
+        if task
+            .state
+            .files
+            .iter()
+            .all(|file| file.status == TransferStatus::Completed)
+        {
+            let record = build_record(&task.state, TransferStatus::Completed, None);
+            self.active.remove(transfer_id);
+            self.try_dequeue();
+            return Some(record);
+        }
+        None
+    }
+
+    pub fn mark_file_failed(
+        &mut self,
+        transfer_id: &uuid::Uuid,
+        file_id: &uuid::Uuid,
+        error: String,
+    ) -> Option<TransferRecord> {
+        let task = self.active.get_mut(transfer_id)?;
+        for file in &mut task.state.files {
+            if file.file_id == *file_id {
+                file.status = TransferStatus::Failed;
+                file.speed = 0.0;
+            }
+        }
+        task.state.status = TransferStatus::Failed;
+        let record = build_record(&task.state, TransferStatus::Failed, Some(error));
+        self.active.remove(transfer_id);
+        self.try_dequeue();
+        Some(record)
+    }
+
+    pub fn mark_transfer_cancelled(
+        &mut self,
+        transfer_id: &uuid::Uuid,
+        reason: String,
+    ) -> Option<TransferRecord> {
+        let task = self.active.remove(transfer_id)?;
+        let mut state = task.state;
+        state.status = TransferStatus::Cancelled;
+        for file in &mut state.files {
+            if file.status != TransferStatus::Completed {
+                file.status = TransferStatus::Cancelled;
+                file.speed = 0.0;
+            }
+        }
+        let record = build_record(&state, TransferStatus::Cancelled, Some(reason));
+        self.try_dequeue();
+        Some(record)
     }
 
     fn try_dequeue(&mut self) {
@@ -411,7 +482,14 @@ impl TransferEngine {
                         let cfg = self.config.clone();
                         tokio::spawn(async move {
                             let _ = crate::transfer::sender::run_file_send(
-                                q.id, file_id, &meta_clone, &file_path, peer, cfg, cr, pt,
+                                q.id,
+                                file_id,
+                                &meta_clone,
+                                &file_path,
+                                peer,
+                                cfg,
+                                cr,
+                                pt,
                             )
                             .await;
                         });
@@ -420,7 +498,10 @@ impl TransferEngine {
                 Direction::Receive => {
                     let chunk_size = self.config.chunk_size;
                     for meta in q.files.iter() {
-                        let save_path = q.save_dir.as_ref().map(|d| d.join(&meta.name))
+                        let save_path = q
+                            .save_dir
+                            .as_ref()
+                            .map(|d| d.join(&meta.name))
                             .unwrap_or_else(|| std::path::PathBuf::from(&meta.name));
                         let peer = q.peer.clone();
                         let pt = progress_tx.clone();
@@ -439,14 +520,7 @@ impl TransferEngine {
 
                         tokio::spawn(async move {
                             let result = crate::transfer::receiver::run_file_receive(
-                                q.id,
-                                &file_meta,
-                                &save_path,
-                                peer,
-                                chunk_size,
-                                cr,
-                                data_rx,
-                                pt,
+                                q.id, &file_meta, &save_path, peer, chunk_size, cr, data_rx, pt,
                             )
                             .await;
                             let mut channels = dc.lock().await;
@@ -480,6 +554,7 @@ impl TransferEngine {
                         direction: q.direction,
                         peer_id: q.peer.peer_id(),
                         peer_name: q.peer_name,
+                        transport: q.peer.transport(),
                         files: file_progress,
                         started_at: chrono::Utc::now(),
                         status: TransferStatus::Transferring,
@@ -490,6 +565,30 @@ impl TransferEngine {
                 },
             );
         }
+    }
+}
+
+fn build_record(
+    state: &TransferState,
+    status: TransferStatus,
+    failure_reason: Option<String>,
+) -> TransferRecord {
+    TransferRecord {
+        id: state.id,
+        direction: state.direction.clone(),
+        peer_id: state.peer_id,
+        peer_name: state.peer_name.clone(),
+        transport: state.transport.clone(),
+        file_names: state
+            .files
+            .iter()
+            .map(|file| file.file_name.clone())
+            .collect(),
+        total_size: state.files.iter().map(|file| file.size).sum(),
+        started_at: state.started_at,
+        completed_at: chrono::Utc::now(),
+        status,
+        failure_reason,
     }
 }
 
@@ -516,7 +615,11 @@ impl Clone for PeerHandle {
                 client: client.clone(),
                 peer_id: *peer_id,
             },
-            Self::Both { conn, client, peer_id } => Self::Both {
+            Self::Both {
+                conn,
+                client,
+                peer_id,
+            } => Self::Both {
                 conn: conn.clone(),
                 client: client.clone(),
                 peer_id: *peer_id,

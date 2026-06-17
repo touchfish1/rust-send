@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::core::file::TransferRecord;
+use serde::{Deserialize, Serialize};
 
 const HISTORY_FILE: &str = "history.json";
 
@@ -15,7 +15,9 @@ impl TransferHistory {
             let content = std::fs::read_to_string(&path)?;
             Ok(serde_json::from_str(&content)?)
         } else {
-            Ok(Self { records: Vec::new() })
+            Ok(Self {
+                records: Vec::new(),
+            })
         }
     }
 

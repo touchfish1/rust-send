@@ -1,3 +1,4 @@
+use crate::core::file::TransferTransport;
 use crate::relay::client::RelayClient;
 use base64::Engine;
 use bytes::Bytes;
@@ -34,7 +35,11 @@ impl PeerHandle {
             }
             _ => {}
         }
-        if let Self::Relay { client, peer_id } | Self::Both { client, peer_id, .. } = self {
+        if let Self::Relay { client, peer_id }
+        | Self::Both {
+            client, peer_id, ..
+        } = self
+        {
             let b64 = base64::engine::general_purpose::STANDARD.encode(&data_clone);
             let payload = serde_json::json!({
                 "type": "relay_data",
@@ -51,6 +56,14 @@ impl PeerHandle {
             Self::Lan { peer_id, .. }
             | Self::Relay { peer_id, .. }
             | Self::Both { peer_id, .. } => *peer_id,
+        }
+    }
+
+    pub fn transport(&self) -> TransferTransport {
+        match self {
+            Self::Lan { .. } => TransferTransport::Lan,
+            Self::Relay { .. } => TransferTransport::Relay,
+            Self::Both { .. } => TransferTransport::Hybrid,
         }
     }
 }

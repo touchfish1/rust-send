@@ -95,9 +95,7 @@ impl RelayClient {
 
         let (mut ws_writer, mut ws_reader) = ws.split();
 
-        ws_writer
-            .send(Message::Text(register.to_string()))
-            .await?;
+        ws_writer.send(Message::Text(register.to_string())).await?;
 
         // 发送连接成功事件
         let _ = event_tx.send(RelayEvent::Connected).await;
@@ -153,17 +151,36 @@ impl RelayClient {
                     match msg_type {
                         "pong" => continue,
                         "device_list" => {
-                            let Ok(devices) = serde_json::from_value::<Vec<DeviceInfo>>(parsed["devices"].clone()) else { continue };
+                            let Ok(devices) = serde_json::from_value::<Vec<DeviceInfo>>(
+                                parsed["devices"].clone(),
+                            ) else {
+                                continue;
+                            };
                             RelayEvent::DeviceList(devices)
                         }
                         "signal" => {
-                            let Ok(source_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
-                            let Ok(message) = serde_json::from_value::<SignalingMessage>(parsed["message"].clone()) else { continue };
+                            let Ok(source_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone())
+                            else {
+                                continue;
+                            };
+                            let Ok(message) = serde_json::from_value::<SignalingMessage>(
+                                parsed["message"].clone(),
+                            ) else {
+                                continue;
+                            };
                             RelayEvent::Signal { source_id, message }
                         }
                         "transfer_request" => {
-                            let Ok(source_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
-                            let source_name = parsed["source_name"].as_str().unwrap_or("unknown").to_string();
+                            let Ok(source_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone())
+                            else {
+                                continue;
+                            };
+                            let source_name = parsed["source_name"]
+                                .as_str()
+                                .unwrap_or("unknown")
+                                .to_string();
                             let offer_id = parsed["offer_id"]
                                 .as_str()
                                 .or_else(|| parsed["offerId"].as_str())
@@ -173,22 +190,46 @@ impl RelayClient {
                                 .as_str()
                                 .or_else(|| parsed["expiresAt"].as_str())
                                 .map(ToString::to_string)
-                                .unwrap_or_else(|| (chrono::Utc::now() + chrono::Duration::hours(2)).to_rfc3339());
-                            let Ok(files) = serde_json::from_value::<Vec<FileMeta>>(parsed["files"].clone()) else { continue };
-                            RelayEvent::TransferRequest { source_id, source_name, offer_id, expires_at, files }
+                                .unwrap_or_else(|| {
+                                    (chrono::Utc::now() + chrono::Duration::hours(2)).to_rfc3339()
+                                });
+                            let Ok(files) =
+                                serde_json::from_value::<Vec<FileMeta>>(parsed["files"].clone())
+                            else {
+                                continue;
+                            };
+                            RelayEvent::TransferRequest {
+                                source_id,
+                                source_name,
+                                offer_id,
+                                expires_at,
+                                files,
+                            }
                         }
                         "transfer_accept" => {
-                            let Ok(target_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
+                            let Ok(target_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone())
+                            else {
+                                continue;
+                            };
                             let offer_id = parsed["offer_id"]
                                 .as_str()
                                 .or_else(|| parsed["offerId"].as_str())
                                 .map(ToString::to_string)
                                 .unwrap_or_default();
                             let file_ids = parse_file_ids(&parsed);
-                            RelayEvent::TransferAccepted { target_id, offer_id, file_ids }
+                            RelayEvent::TransferAccepted {
+                                target_id,
+                                offer_id,
+                                file_ids,
+                            }
                         }
                         "transfer_reject" => {
-                            let Ok(target_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
+                            let Ok(target_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone())
+                            else {
+                                continue;
+                            };
                             let offer_id = parsed["offer_id"]
                                 .as_str()
                                 .or_else(|| parsed["offerId"].as_str())
@@ -200,11 +241,22 @@ impl RelayClient {
                                 .or_else(|| parsed["message"].as_str())
                                 .unwrap_or("rejected")
                                 .to_string();
-                            RelayEvent::TransferRejected { target_id, offer_id, reason }
+                            RelayEvent::TransferRejected {
+                                target_id,
+                                offer_id,
+                                reason,
+                            }
                         }
                         "chat_message" => {
-                            let Ok(source_id) = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()) else { continue };
-                            let source_name = parsed["source_name"].as_str().unwrap_or("unknown").to_string();
+                            let Ok(source_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone())
+                            else {
+                                continue;
+                            };
+                            let source_name = parsed["source_name"]
+                                .as_str()
+                                .unwrap_or("unknown")
+                                .to_string();
                             let message_id = parsed["message_id"]
                                 .as_str()
                                 .map(ToString::to_string)
@@ -223,34 +275,78 @@ impl RelayClient {
                             }
                         }
                         "relay_data" => {
-                            let _source_id = serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone()).ok();
+                            let _source_id =
+                                serde_json::from_value::<uuid::Uuid>(parsed["source_id"].clone())
+                                    .ok();
                             let data_b64 = parsed["data"].as_str().unwrap_or("");
-                            let raw = match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data_b64) {
+                            let raw = match base64::Engine::decode(
+                                &base64::engine::general_purpose::STANDARD,
+                                data_b64,
+                            ) {
                                 Ok(d) => d,
                                 Err(_) => continue,
                             };
-                            let Some(file_id) = extract_relay_file_id(&raw) else { continue };
-                            RelayEvent::RelayData { file_id, data: Bytes::from(raw) }
+                            let Some(file_id) = extract_relay_file_id(&raw) else {
+                                continue;
+                            };
+                            RelayEvent::RelayData {
+                                file_id,
+                                data: Bytes::from(raw),
+                            }
                         }
                         "cancel" => {
-                            let Ok(transfer_id) = serde_json::from_value::<uuid::Uuid>(parsed["transfer_id"].clone()) else { continue };
+                            let Ok(transfer_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["transfer_id"].clone())
+                            else {
+                                continue;
+                            };
                             let reason = parsed["reason"].as_str().unwrap_or("unknown").to_string();
-                            RelayEvent::Cancel { transfer_id, reason }
+                            RelayEvent::Cancel {
+                                transfer_id,
+                                reason,
+                            }
                         }
                         "pause" => {
-                            let Ok(transfer_id) = serde_json::from_value::<uuid::Uuid>(parsed["transfer_id"].clone()) else { continue };
+                            let Ok(transfer_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["transfer_id"].clone())
+                            else {
+                                continue;
+                            };
                             let reason = parsed["reason"].as_str().unwrap_or("user").to_string();
-                            RelayEvent::Pause { transfer_id, reason }
+                            RelayEvent::Pause {
+                                transfer_id,
+                                reason,
+                            }
                         }
                         "resume" => {
-                            let Ok(transfer_id) = serde_json::from_value::<uuid::Uuid>(parsed["transfer_id"].clone()) else { continue };
+                            let Ok(transfer_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["transfer_id"].clone())
+                            else {
+                                continue;
+                            };
                             RelayEvent::Resume { transfer_id }
                         }
                         "chunk_request" => {
-                            let Ok(transfer_id) = serde_json::from_value::<uuid::Uuid>(parsed["transfer_id"].clone()) else { continue };
-                            let Ok(file_id) = serde_json::from_value::<uuid::Uuid>(parsed["file_id"].clone()) else { continue };
-                            let Ok(missing_chunks) = serde_json::from_value::<Vec<u32>>(parsed["missing_chunks"].clone()) else { continue };
-                            RelayEvent::ChunkRequest { transfer_id, file_id, missing_chunks }
+                            let Ok(transfer_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["transfer_id"].clone())
+                            else {
+                                continue;
+                            };
+                            let Ok(file_id) =
+                                serde_json::from_value::<uuid::Uuid>(parsed["file_id"].clone())
+                            else {
+                                continue;
+                            };
+                            let Ok(missing_chunks) = serde_json::from_value::<Vec<u32>>(
+                                parsed["missing_chunks"].clone(),
+                            ) else {
+                                continue;
+                            };
+                            RelayEvent::ChunkRequest {
+                                transfer_id,
+                                file_id,
+                                missing_chunks,
+                            }
                         }
                         "error" => {
                             let msg = parsed["message"].as_str().unwrap_or("unknown").to_string();
@@ -279,11 +375,7 @@ impl RelayClient {
         ))
     }
 
-    pub fn send_signal(
-        &self,
-        target_id: uuid::Uuid,
-        msg: &SignalingMessage,
-    ) -> Result<(), String> {
+    pub fn send_signal(&self, target_id: uuid::Uuid, msg: &SignalingMessage) -> Result<(), String> {
         let payload = serde_json::json!({
             "type": "signal",
             "target_id": target_id,
@@ -357,7 +449,11 @@ impl RelayClient {
             .map_err(|_| "relay disconnected".to_string())
     }
 
-    pub fn send_cancel(&self, target_id: uuid::Uuid, transfer_id: uuid::Uuid) -> Result<(), String> {
+    pub fn send_cancel(
+        &self,
+        target_id: uuid::Uuid,
+        transfer_id: uuid::Uuid,
+    ) -> Result<(), String> {
         let payload = serde_json::json!({
             "type": "cancel",
             "target_id": target_id,

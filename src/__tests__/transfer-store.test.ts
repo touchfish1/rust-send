@@ -7,6 +7,7 @@ const mockTransfer: TransferState = {
   direction: "send",
   peerId: "dev-1",
   peerName: "MacBook Pro",
+  transport: "relay",
   files: [
     { fileId: "f-1", fileName: "test.pdf", size: 1024, bytesSent: 0, speed: 0, status: "queued" },
   ],
@@ -66,9 +67,9 @@ describe("TransferStore", () => {
     useTransferStore.getState().addTransfer(mockTransfer)
     useTransferStore.getState().failTransfer("f-1", "disk full")
 
-    const file = useTransferStore.getState().active.get("t-1")?.files[0]
-    expect(file?.status).toBe("failed")
-    expect(useTransferStore.getState().active.get("t-1")?.status).toBe("failed")
+    expect(useTransferStore.getState().active.get("t-1")).toBeUndefined()
+    expect(useTransferStore.getState().history[0].status).toBe("failed")
+    expect(useTransferStore.getState().history[0].failureReason).toBe("disk full")
   })
 
   it("handles incoming transfer request", () => {
@@ -91,5 +92,13 @@ describe("TransferStore", () => {
 
     useTransferStore.getState().clearHistory()
     expect(useTransferStore.getState().history.length).toBe(0)
+  })
+
+  it("moves cancelled transfers into history", () => {
+    useTransferStore.getState().addTransfer(mockTransfer)
+    useTransferStore.getState().cancelTransfer("t-1")
+
+    expect(useTransferStore.getState().active.size).toBe(0)
+    expect(useTransferStore.getState().history[0].status).toBe("cancelled")
   })
 })

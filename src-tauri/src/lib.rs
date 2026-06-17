@@ -9,12 +9,12 @@ mod transfer;
 
 pub use error::AppError;
 
-use core::file::ProgressEvent;
 use core::file::FileMeta;
+use core::file::ProgressEvent;
 use relay::client::RelayClient;
-use storage::{config::Config, history::TransferHistory};
 use std::collections::HashMap;
 use std::sync::Arc;
+use storage::{config::Config, history::TransferHistory};
 use tauri::{Emitter, Manager};
 use transfer::engine::{TransferConfig, TransferEngine};
 
@@ -28,7 +28,8 @@ pub struct AppState {
     pub relay_client: Arc<tokio::sync::Mutex<Option<Arc<RelayClient>>>>,
     pub pending_outgoing: Arc<tokio::sync::Mutex<HashMap<String, PendingOutgoingTransfer>>>,
     /// file_id → data sender channel for routing incoming relay data to receivers
-    pub receiver_data_channels: Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>>,
+    pub receiver_data_channels:
+        Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>>,
 }
 
 #[derive(Clone)]
@@ -51,8 +52,9 @@ pub fn run() {
         max_concurrent: 3,
         ..Default::default()
     };
-    let data_channels: Arc<tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>> =
-        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+    let data_channels: Arc<
+        tokio::sync::Mutex<std::collections::HashMap<uuid::Uuid, mpsc::Sender<Bytes>>>,
+    > = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
     let (mut engine, progress_rx) = TransferEngine::new(engine_config);
     engine.set_data_channels(data_channels.clone());
 
@@ -84,8 +86,18 @@ pub fn run() {
 
             // mDNS 局域网发现（Tauri 桌面端）
             let app_state = app.state::<AppState>().inner();
-            let device_id = app_state.config.lock().ok().map(|c| c.device_id).unwrap_or_else(uuid::Uuid::new_v4);
-            let device_name = app_state.config.lock().ok().map(|c| c.device_name.clone()).unwrap_or_else(whoami::hostname);
+            let device_id = app_state
+                .config
+                .lock()
+                .ok()
+                .map(|c| c.device_id)
+                .unwrap_or_else(uuid::Uuid::new_v4);
+            let device_name = app_state
+                .config
+                .lock()
+                .ok()
+                .map(|c| c.device_name.clone())
+                .unwrap_or_else(whoami::hostname);
             match crate::discovery::mdns::MdnsDiscovery::start(device_id, &device_name) {
                 Ok((_discovery, mdns_rx)) => {
                     let mdns_handle = handle.clone();
@@ -98,7 +110,10 @@ pub fn run() {
                                 }
                                 crate::discovery::mdns::DiscoveredEvent::Lost(device_id) => {
                                     use tauri::Emitter;
-                                    let _ = mdns_handle.emit("device:lost", serde_json::json!({"device_id": device_id}));
+                                    let _ = mdns_handle.emit(
+                                        "device:lost",
+                                        serde_json::json!({"device_id": device_id}),
+                                    );
                                 }
                             }
                         }
@@ -116,40 +131,112 @@ pub fn run() {
                 while let Some(event) = rx.recv().await {
                     use serde_json::json;
                     match event {
-                        ProgressEvent::Progress { transfer_id, file_id, file_name, bytes_sent, bytes_total, speed } => {
-                            handle.emit("transfer:progress", json!({
-                                "transfer_id": transfer_id, "file_id": file_id,
-                                "file_name": file_name, "bytes_sent": bytes_sent,
-                                "bytes_total": bytes_total, "speed": speed,
-                            })).ok();
+                        ProgressEvent::Progress {
+                            transfer_id,
+                            file_id,
+                            file_name,
+                            bytes_sent,
+                            bytes_total,
+                            speed,
+                        } => {
+                            handle
+                                .emit(
+                                    "transfer:progress",
+                                    json!({
+                                        "transfer_id": transfer_id, "file_id": file_id,
+                                        "file_name": file_name, "bytes_sent": bytes_sent,
+                                        "bytes_total": bytes_total, "speed": speed,
+                                    }),
+                                )
+                                .ok();
                         }
-                        ProgressEvent::Complete { transfer_id, file_id, file_name, saved_path } => {
-                            handle.emit("transfer:complete", json!({
-                                "transfer_id": transfer_id,
-                                "file_id": file_id,
-                                "file_name": file_name,
-                                "saved_path": saved_path,
-                            })).ok();
+                        ProgressEvent::Complete {
+                            transfer_id,
+                            file_id,
+                            file_name,
+                            saved_path,
+                        } => {
+                            if let Some(record) = {
+                                let state = handle.state::<AppState>();
+                                let mut engine = state.engine.lock().await;
+                                engine.mark_file_completed(&transfer_id, &file_id)
+                            } {
+                                persist_history_record(&handle, record);
+                            }
+                            handle
+                                .emit(
+                                    "transfer:complete",
+                                    json!({
+                                        "transfer_id": transfer_id,
+                                        "file_id": file_id,
+                                        "file_name": file_name,
+                                        "saved_path": saved_path,
+                                    }),
+                                )
+                                .ok();
                         }
                         ProgressEvent::BatchComplete { transfer_id } => {
-                            handle.emit("transfer:batch_complete", json!({"transfer_id": transfer_id})).ok();
+                            handle
+                                .emit(
+                                    "transfer:batch_complete",
+                                    json!({"transfer_id": transfer_id}),
+                                )
+                                .ok();
                         }
-                        ProgressEvent::Failed { transfer_id, file_id, error } => {
+                        ProgressEvent::Failed {
+                            transfer_id,
+                            file_id,
+                            error,
+                        } => {
+                            if let Some(record) = {
+                                let state = handle.state::<AppState>();
+                                let mut engine = state.engine.lock().await;
+                                engine.mark_file_failed(&transfer_id, &file_id, error.clone())
+                            } {
+                                persist_history_record(&handle, record);
+                            }
                             handle.emit("transfer:failed", json!({
                                 "transfer_id": transfer_id, "file_id": file_id, "error": error,
                             })).ok();
                         }
                         ProgressEvent::Paused { reason } => {
-                            handle.emit("transfer:paused", json!({"reason": reason})).ok();
+                            handle
+                                .emit("transfer:paused", json!({"reason": reason}))
+                                .ok();
                         }
                         ProgressEvent::Resumed { file_id } => {
-                            handle.emit("transfer:resumed", json!({"file_id": file_id})).ok();
+                            handle
+                                .emit("transfer:resumed", json!({"file_id": file_id}))
+                                .ok();
                         }
-                        ProgressEvent::Cancelled { transfer_id, reason } => {
-                            handle.emit("transfer:cancelled", json!({"transfer_id": transfer_id, "reason": reason})).ok();
+                        ProgressEvent::Cancelled {
+                            transfer_id,
+                            reason,
+                        } => {
+                            if let Some(record) = {
+                                let state = handle.state::<AppState>();
+                                let mut engine = state.engine.lock().await;
+                                engine.mark_transfer_cancelled(&transfer_id, reason.clone())
+                            } {
+                                persist_history_record(&handle, record);
+                            }
+                            handle
+                                .emit(
+                                    "transfer:cancelled",
+                                    json!({"transfer_id": transfer_id, "reason": reason}),
+                                )
+                                .ok();
                         }
-                        ProgressEvent::Queued { transfer_id, position } => {
-                            handle.emit("transfer:queued", json!({"transfer_id": transfer_id, "position": position})).ok();
+                        ProgressEvent::Queued {
+                            transfer_id,
+                            position,
+                        } => {
+                            handle
+                                .emit(
+                                    "transfer:queued",
+                                    json!({"transfer_id": transfer_id, "position": position}),
+                                )
+                                .ok();
                         }
                     }
                 }
@@ -183,4 +270,14 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn persist_history_record(app: &tauri::AppHandle, record: core::file::TransferRecord) {
+    let state = app.state::<AppState>();
+    if let Ok(mut history) = state.history.lock() {
+        history.add(record);
+        if let Err(error) = crate::storage::history::save(&history) {
+            tracing::warn!("save history failed: {}", error);
+        }
+    }
 }
