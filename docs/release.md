@@ -19,6 +19,25 @@ The `Release` workflow will build each platform and publish a GitHub Release wit
 
 Recommended wording for GitHub Releases:
 
+- Open with a short product paragraph, not just a file list.
+- Lead with `What's new`, then `Choose your download`.
+- Keep Linux package explanations explicit because users often do not know whether to pick `deb`, `rpm`, or `AppImage`.
+
+Suggested sections:
+
+- Intro:
+  - one sentence on what rust-send is for
+  - one sentence on why this release matters
+- What's new:
+  - updater support
+  - packaging / UX improvements
+- Choose your download:
+  - per-platform guidance
+- Linux AppImage:
+  - executable example
+- Notes:
+  - trust prompts / signing caveats
+
 - Windows:
   - `setup.exe` for most users
   - `msi` for managed deployment

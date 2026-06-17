@@ -88,15 +88,32 @@ jobs:
           tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           releaseName: "rust-send ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           releaseBody: |
-            ## Downloads
+            rust-send keeps desktop file transfer fast, local-first, and simple.
 
-            Pick the package that matches your platform:
+            This release makes the desktop app feel more complete, especially around installation and staying up to date.
+
+            ## What's new
+
+            - In-app updater support on desktop:
+              - the app can now detect new releases from GitHub Releases
+              - update metadata and signatures are now published with each release
+            - Better distribution across Linux:
+              - `.deb` for Ubuntu / Debian
+              - `.rpm` for Fedora / RHEL / openSUSE
+              - `.AppImage` for portable use on most modern Linux distributions
+            - Polished release packaging:
+              - signed updater assets
+              - clearer cross-platform installer output
+
+            ## Choose your download
+
+            Pick the package that fits your platform and preferred install style:
 
             - Windows:
               - `rust-send_*_x64-setup.exe`: recommended installer for most users
               - `rust-send_*_x64_en-US.msi`: MSI package for managed or enterprise-style installation
             - macOS:
-              - `rust-send_*_aarch64.dmg`: Apple Silicon Macs
+              - `rust-send_*_aarch64.dmg`: standard installer for Apple Silicon Macs
               - `rust-send_aarch64.app.tar.gz`: app bundle archive
             - Linux:
               - `rust-send_*_amd64.deb`: Ubuntu / Debian
@@ -105,7 +122,7 @@ jobs:
 
             ## Linux AppImage
 
-            If you use the AppImage build, make it executable first:
+            If you prefer the portable Linux build, make the AppImage executable first:
 
             ```bash
             chmod +x rust-send_*.AppImage
@@ -114,13 +131,13 @@ jobs:
 
             ## In-app updates
 
-            - `latest.json` is the updater metadata used by the desktop app.
-            - `.sig` files are updater signatures used for integrity verification.
+            - `latest.json` is the update manifest used by the desktop app.
+            - `.sig` files are verification signatures for updater assets.
 
             ## Notes
 
-            - Windows and macOS platform notarization / OS trust prompts may still appear until platform-specific signing is added.
             - If you are upgrading from an older desktop build, using the installer package is recommended.
+            - Windows and macOS may still show OS-level trust prompts until platform-specific notarization / signing is added.
           releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease }}
           includeUpdaterJson: true
