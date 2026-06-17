@@ -15,6 +15,27 @@ git push origin v0.1.0
 
 The `Release` workflow will build each platform and publish a GitHub Release with the generated installers attached.
 
+## Release page copy
+
+Recommended wording for GitHub Releases:
+
+- Windows:
+  - `setup.exe` for most users
+  - `msi` for managed deployment
+- macOS:
+  - `dmg` for Apple Silicon Macs
+- Linux:
+  - `deb` for Ubuntu / Debian
+  - `rpm` for Fedora / RHEL / openSUSE
+  - `AppImage` for portable distribution
+
+Example AppImage usage:
+
+```bash
+chmod +x rust-send_0.1.1_amd64.AppImage
+./rust-send_0.1.1_amd64.AppImage
+```
+
 ## Manual release
 
 You can also run the `Release` workflow from GitHub Actions with `workflow_dispatch` and provide a tag such as `v0.1.0`. Manual runs can still be created as drafts for verification.

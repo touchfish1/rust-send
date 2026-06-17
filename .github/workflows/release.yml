@@ -87,7 +87,40 @@ jobs:
         with:
           tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           releaseName: "rust-send ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-          releaseBody: "Desktop installers and updater metadata are attached below."
+          releaseBody: |
+            ## Downloads
+
+            Pick the package that matches your platform:
+
+            - Windows:
+              - `rust-send_*_x64-setup.exe`: recommended installer for most users
+              - `rust-send_*_x64_en-US.msi`: MSI package for managed or enterprise-style installation
+            - macOS:
+              - `rust-send_*_aarch64.dmg`: Apple Silicon Macs
+              - `rust-send_aarch64.app.tar.gz`: app bundle archive
+            - Linux:
+              - `rust-send_*_amd64.deb`: Ubuntu / Debian
+              - `rust-send-*-1.x86_64.rpm`: Fedora / RHEL / openSUSE
+              - `rust-send_*_amd64.AppImage`: portable build for most modern Linux distributions
+
+            ## Linux AppImage
+
+            If you use the AppImage build, make it executable first:
+
+            ```bash
+            chmod +x rust-send_*.AppImage
+            ./rust-send_*.AppImage
+            ```
+
+            ## In-app updates
+
+            - `latest.json` is the updater metadata used by the desktop app.
+            - `.sig` files are updater signatures used for integrity verification.
+
+            ## Notes
+
+            - Windows and macOS platform notarization / OS trust prompts may still appear until platform-specific signing is added.
+            - If you are upgrading from an older desktop build, using the installer package is recommended.
           releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease }}
           includeUpdaterJson: true
